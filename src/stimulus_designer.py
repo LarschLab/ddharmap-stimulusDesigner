@@ -53,6 +53,16 @@ class GlobalStimulusParams:
 
 
 @dataclass
+class GridSettings:
+    ring_count: int = 3
+    first_ring_radius_cm: float = 1.8
+    ring_spacing_cm: float = 0.5
+    points_per_ring: int = 24
+    movement_interval_ms: float = 600.0
+    movement_mode: str = "bout"
+
+
+@dataclass
 class Primitive:
     kind: str
     params: dict[str, Any] = field(default_factory=dict)
@@ -71,6 +81,7 @@ class StimulusProject:
     name: str = "stimulus_project"
     calibration: Calibration = field(default_factory=Calibration)
     global_params: GlobalStimulusParams = field(default_factory=GlobalStimulusParams)
+    grid_settings: GridSettings = field(default_factory=GridSettings)
     stimuli: list[StimulusSpec] = field(default_factory=list)
 
 
@@ -99,6 +110,7 @@ def project_to_dict(project: StimulusProject) -> dict[str, Any]:
 def project_from_dict(data: dict[str, Any]) -> StimulusProject:
     calibration = Calibration(**data.get("calibration", {}))
     global_params = GlobalStimulusParams(**data.get("global_params", {}))
+    grid_settings = GridSettings(**data.get("grid_settings", {}))
     stimuli = []
     for stim_data in data.get("stimuli", []):
         primitives = [
@@ -117,6 +129,7 @@ def project_from_dict(data: dict[str, Any]) -> StimulusProject:
         name=data.get("name", "stimulus_project"),
         calibration=calibration,
         global_params=global_params,
+        grid_settings=grid_settings,
         stimuli=stimuli,
     )
 
@@ -209,6 +222,28 @@ def _rotated_position(radius_cm: float, angle_deg: float, rotation_deg: float) -
     )
 
 
+def grid_point_to_position(radius_cm: float, angle_deg: float, params: GlobalStimulusParams | None = None) -> tuple[float, float]:
+    params = params or GlobalStimulusParams()
+    return _rotated_position(radius_cm, angle_deg, params.rotation_angle_deg)
+
+
+def make_grid_point(ring_index: int, point_index: int, grid: GridSettings, params: GlobalStimulusParams | None = None) -> dict[str, float | int]:
+    ring_index = max(0, int(ring_index))
+    point_index = int(point_index) % max(1, int(grid.points_per_ring))
+    radius_cm = float(grid.first_ring_radius_cm) + ring_index * float(grid.ring_spacing_cm)
+    angle_deg = -180.0 + (360.0 * point_index / max(1, int(grid.points_per_ring)))
+    x_cm, y_cm = grid_point_to_position(radius_cm, angle_deg, params)
+    return {
+        "ring_index": ring_index,
+        "point_index": point_index,
+        "points_per_ring": max(1, int(grid.points_per_ring)),
+        "radius_cm": round(radius_cm, 3),
+        "angle_deg": round(angle_deg, 3),
+        "x_cm": x_cm,
+        "y_cm": y_cm,
+    }
+
+
 def _arc_samples(angle_range: list[float], params: GlobalStimulusParams, continuous: bool) -> tuple[np.ndarray, np.ndarray, np.ndarray, float]:
     start_angle, end_angle = np.deg2rad(angle_range)
     omega = params.speed_cm_sec / params.radius_cm
@@ -238,6 +273,34 @@ def _apply_flicker(radius_values: list[float], start_frame: int, params: GlobalS
 def _append_rows(rows: list[dict[str, float]], x: float, y: float, radius: float, frames: int) -> None:
     for _ in range(max(0, int(frames))):
         rows.append({"x": float(x), "y": float(y), "radius": float(radius)})
+
+
+def _point_xy(point: dict[str, Any], params: GlobalStimulusParams) -> tuple[float, float]:
+    if "radius_cm" in point and "angle_deg" in point:
+        return grid_point_to_position(float(point["radius_cm"]), float(point["angle_deg"]), params)
+    return float(point.get("x_cm", 0.0)), float(point.get("y_cm", 0.0))
+
+
+def _point_path_rows(path_params: dict[str, Any], params: GlobalStimulusParams) -> list[dict[str, float]]:
+    points = list(path_params.get("points", []))
+    if not points:
+        return []
+    mode = str(path_params.get("mode", "bout")).lower()
+    interval_ms = float(path_params.get("movement_interval_ms", params.update_interval_ms))
+    frames = max(1, int(round((interval_ms / 1000.0) * params.framerate)))
+    rows: list[dict[str, float]] = []
+    xy_points = [_point_xy(point, params) for point in points]
+    if mode == "continuous" and len(xy_points) > 1:
+        for (x0, y0), (x1, y1) in zip(xy_points[:-1], xy_points[1:]):
+            for frame in range(frames):
+                frac = (frame + 1) / frames
+                x = x0 + (x1 - x0) * frac
+                y = y0 + (y1 - y0) * frac
+                _append_rows(rows, x, y, params.dot_size_cm, 1)
+    else:
+        for x, y in xy_points:
+            _append_rows(rows, x, y, params.dot_size_cm, frames)
+    return rows
 
 
 def _generate_dot_rows(spec: StimulusSpec, dot_index: int, params: GlobalStimulusParams) -> list[dict[str, float]]:
@@ -320,6 +383,13 @@ def _generate_dot_rows(spec: StimulusSpec, dot_index: int, params: GlobalStimulu
                 y = current_y + (target_y - current_y) * frac
                 _append_rows(rows, x, y, params.dot_size_cm, 1)
             current_x, current_y = target_x, target_y
+
+        elif kind == "point_path":
+            point_rows = _point_path_rows(p, params)
+            rows.extend(point_rows)
+            if point_rows:
+                current_x = point_rows[-1]["x"]
+                current_y = point_rows[-1]["y"]
 
         else:
             raise ValueError(f"Unknown primitive kind: {kind}")
@@ -423,6 +493,42 @@ def export_project(project: StimulusProject, output_dir: str | Path) -> list[Pat
     ).to_csv(params_dir / "total_time_sec.csv", index=False)
     save_project(project, params_dir / "stimulus_designer_project.json")
     return written
+
+
+def mirror_stimulus_in_place(spec: StimulusSpec, params: GlobalStimulusParams | None = None) -> None:
+    params = params or GlobalStimulusParams()
+    for primitive in spec.primitives:
+        p = primitive.params
+        for key in ("angle_deg",):
+            if key in p:
+                p[key] = -float(p[key])
+        for key in ("angle_range", "left_angle_range", "right_angle_range"):
+            if key in p:
+                p[key] = [-float(angle) for angle in p[key]]
+        if primitive.kind == "rocking_lr":
+            left = p.get("left_angle_range")
+            right = p.get("right_angle_range")
+            p["left_angle_range"] = right
+            p["right_angle_range"] = left
+        if primitive.kind == "waypoint_move" and "x_cm" in p:
+            p["x_cm"] = -float(p["x_cm"])
+        if primitive.kind == "point_path":
+            mirrored_points = []
+            for point in p.get("points", []):
+                mirrored = dict(point)
+                if "angle_deg" in mirrored:
+                    mirrored["angle_deg"] = -float(mirrored["angle_deg"])
+                    if "points_per_ring" in mirrored:
+                        points_per_ring = max(1, int(mirrored["points_per_ring"]))
+                        mirrored["point_index"] = int(round(((float(mirrored["angle_deg"]) + 180.0) / 360.0) * points_per_ring)) % points_per_ring
+                if "radius_cm" in mirrored and "angle_deg" in mirrored:
+                    x_cm, y_cm = grid_point_to_position(float(mirrored["radius_cm"]), float(mirrored["angle_deg"]), params)
+                    mirrored["x_cm"] = x_cm
+                    mirrored["y_cm"] = y_cm
+                elif "x_cm" in mirrored:
+                    mirrored["x_cm"] = -float(mirrored["x_cm"])
+                mirrored_points.append(mirrored)
+            p["points"] = mirrored_points
 
 
 def launch_psychopy_projection(stimuli_dir: str | Path, script_path: str | Path | None = None) -> subprocess.Popen:

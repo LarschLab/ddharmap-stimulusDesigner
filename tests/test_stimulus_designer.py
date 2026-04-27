@@ -5,6 +5,7 @@ import pandas as pd
 
 from src.stimulus_designer import (
     Calibration,
+    GridSettings,
     Primitive,
     StimulusProject,
     StimulusSpec,
@@ -13,6 +14,9 @@ from src.stimulus_designer import (
     generate_stimulus_dataframe,
     import_legacy_config,
     launch_psychopy_projection,
+    make_grid_point,
+    mirror_stimulus_in_place,
+    project_from_dict,
 )
 
 
@@ -37,6 +41,70 @@ def test_flicker_generation_toggles_radius():
     )
     df = generate_stimulus_dataframe(spec)
     assert 0.0 in set(df["dot0_radius"])
+
+
+def test_point_path_bout_holds_each_clicked_point():
+    grid = GridSettings(points_per_ring=4, movement_interval_ms=500)
+    points = [make_grid_point(0, 0, grid), make_grid_point(0, 1, grid)]
+    spec = StimulusSpec(
+        key="Path",
+        primitives=[Primitive("point_path", {"points": points, "movement_interval_ms": 500, "mode": "bout"})],
+    )
+    df = generate_stimulus_dataframe(spec)
+    assert len(df) == 60
+    assert df.iloc[0]["dot0_x"] == points[0]["x_cm"]
+    assert df.iloc[29]["dot0_x"] == points[0]["x_cm"]
+    assert df.iloc[30]["dot0_x"] == points[1]["x_cm"]
+
+
+def test_point_path_continuous_interpolates_between_clicked_points():
+    grid = GridSettings(points_per_ring=4, movement_interval_ms=500)
+    points = [make_grid_point(0, 0, grid), make_grid_point(0, 1, grid)]
+    spec = StimulusSpec(
+        key="Path",
+        primitives=[Primitive("point_path", {"points": points, "movement_interval_ms": 500, "mode": "continuous"})],
+    )
+    df = generate_stimulus_dataframe(spec)
+    assert len(df) == 30
+    assert df.iloc[-1]["dot0_x"] == points[1]["x_cm"]
+    assert df["dot0_x"].nunique() > 1
+
+
+def test_mirror_stimulus_negates_angles_and_point_path_positions():
+    grid = GridSettings(points_per_ring=8)
+    point = make_grid_point(0, 1, grid)
+    spec = StimulusSpec(
+        key="Mirror",
+        primitives=[
+            Primitive("static_hold", {"angle_deg": -30.0}),
+            Primitive("arc", {"angle_range": [-30.0, -160.0]}),
+            Primitive("point_path", {"points": [point], "movement_interval_ms": 600, "mode": "bout"}),
+        ],
+    )
+    mirror_stimulus_in_place(spec)
+    assert spec.primitives[0].params["angle_deg"] == 30.0
+    assert spec.primitives[1].params["angle_range"] == [30.0, 160.0]
+    mirrored_point = spec.primitives[2].params["points"][0]
+    assert mirrored_point["angle_deg"] == -point["angle_deg"]
+    assert mirrored_point["point_index"] != point["point_index"]
+    assert mirrored_point["x_cm"] != point["x_cm"]
+
+
+def test_project_from_dict_loads_legacy_without_grid_settings():
+    project = project_from_dict(
+        {
+            "stimuli": [
+                {
+                    "key": "Legacy",
+                    "name": "Legacy",
+                    "n_dots": 1,
+                    "primitives": [{"kind": "static_hold", "params": {"duration_sec": 1.0}}],
+                }
+            ]
+        }
+    )
+    assert project.grid_settings.ring_count == 3
+    assert project.grid_settings.movement_mode == "bout"
 
 
 def test_export_project_writes_contract_files(tmp_path):

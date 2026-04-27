@@ -28,6 +28,8 @@ from src.stimulus_designer import (
     import_legacy_config,
     launch_psychopy_projection,
     load_project,
+    make_grid_point,
+    mirror_stimulus_in_place,
     project_to_dict,
     save_project,
 )
@@ -35,6 +37,7 @@ from src.stimulus_designer import (
 
 class PreviewCanvas(QtWidgets.QWidget):
     frame_changed = QtCore.pyqtSignal(int)
+    grid_point_clicked = QtCore.pyqtSignal(int, int)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -43,6 +46,7 @@ class PreviewCanvas(QtWidgets.QWidget):
         self.stimulus = self.project.stimuli[0]
         self.frame_index = 0
         self.df = generate_stimulus_dataframe(self.stimulus, self.project.global_params)
+        self.hovered_grid_point: tuple[int, int] | None = None
         self.setMouseTracking(True)
 
     def set_stimulus(self, project: StimulusProject, stimulus: StimulusSpec) -> None:
@@ -62,6 +66,55 @@ class PreviewCanvas(QtWidgets.QWidget):
     def _to_widget(self, x_cm: float, y_cm: float) -> QtCore.QPointF:
         scale = self._scale()
         return QtCore.QPointF(self.width() / 2.0 + x_cm * scale, self.height() / 2.0 - y_cm * scale)
+
+    def _selected_grid_points(self) -> list[tuple[int, int]]:
+        selected: list[tuple[int, int]] = []
+        for primitive in self.stimulus.primitives:
+            if primitive.kind != "point_path":
+                continue
+            for point in primitive.params.get("points", []):
+                if "ring_index" in point and "point_index" in point:
+                    selected.append((int(point["ring_index"]), int(point["point_index"])))
+        return selected
+
+    def _grid_point_positions(self) -> list[tuple[int, int, QtCore.QPointF]]:
+        grid = self.project.grid_settings
+        positions = []
+        for ring_index in range(max(0, int(grid.ring_count))):
+            for point_index in range(max(1, int(grid.points_per_ring))):
+                point = make_grid_point(ring_index, point_index, grid, self.project.global_params)
+                positions.append((ring_index, point_index, self._to_widget(float(point["x_cm"]), float(point["y_cm"]))))
+        return positions
+
+    def _nearest_grid_point(self, position: QtCore.QPointF) -> tuple[int, int] | None:
+        closest: tuple[int, int] | None = None
+        closest_dist = 10.0
+        for ring_index, point_index, point_pos in self._grid_point_positions():
+            dist = ((point_pos.x() - position.x()) ** 2 + (point_pos.y() - position.y()) ** 2) ** 0.5
+            if dist <= closest_dist:
+                closest = (ring_index, point_index)
+                closest_dist = dist
+        return closest
+
+    def mouseMoveEvent(self, event):
+        point = self._nearest_grid_point(event.position())
+        if point != self.hovered_grid_point:
+            self.hovered_grid_point = point
+            self.update()
+        super().mouseMoveEvent(event)
+
+    def leaveEvent(self, event):
+        self.hovered_grid_point = None
+        self.update()
+        super().leaveEvent(event)
+
+    def mousePressEvent(self, event):
+        if event.button() == QtCore.Qt.MouseButton.LeftButton:
+            point = self._nearest_grid_point(event.position())
+            if point is not None:
+                self.grid_point_clicked.emit(point[0], point[1])
+                return
+        super().mousePressEvent(event)
 
     def paintEvent(self, event):
         painter = QtGui.QPainter(self)
@@ -94,6 +147,36 @@ class PreviewCanvas(QtWidgets.QWidget):
         painter.setBrush(QtGui.QColor("#d9efe7"))
         painter.drawEllipse(center, 12, 26)
         painter.drawLine(center + QtCore.QPointF(0, -34), center + QtCore.QPointF(0, 34))
+
+        selected_points = self._selected_grid_points()
+        selected_lookup = set(selected_points)
+        grid = self.project.grid_settings
+        ring_pen = QtGui.QPen(QtGui.QColor("#b9c3bd"))
+        ring_pen.setWidth(1)
+        painter.setPen(ring_pen)
+        painter.setBrush(QtCore.Qt.BrushStyle.NoBrush)
+        for ring_index in range(max(0, int(grid.ring_count))):
+            radius_cm = float(grid.first_ring_radius_cm) + ring_index * float(grid.ring_spacing_cm)
+            painter.drawEllipse(center, radius_cm * scale, radius_cm * scale)
+        for ring_index, point_index, pos in self._grid_point_positions():
+            is_hovered = self.hovered_grid_point == (ring_index, point_index)
+            is_selected = (ring_index, point_index) in selected_lookup
+            if is_selected:
+                order = selected_points.index((ring_index, point_index))
+                if order == 0:
+                    color = QtGui.QColor("#1b8f5a")
+                elif order == len(selected_points) - 1:
+                    color = QtGui.QColor("#c94f3d")
+                else:
+                    color = QtGui.QColor("#2f6fbb")
+            elif is_hovered:
+                color = QtGui.QColor("#d7a31f")
+            else:
+                color = QtGui.QColor("#ffffff")
+            painter.setBrush(color)
+            painter.setPen(QtGui.QPen(QtGui.QColor("#4c4c48")))
+            radius_px = 5 if is_hovered or is_selected else 3
+            painter.drawEllipse(pos, radius_px, radius_px)
 
         if self.df.empty:
             return
@@ -135,8 +218,31 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
         self.current_output_dir: Path | None = None
         self.timer = QtCore.QTimer(self)
         self.timer.timeout.connect(self._advance_frame)
+        self.description_timer = QtCore.QTimer(self)
+        self.description_timer.setSingleShot(True)
+        self.description_timer.timeout.connect(self._show_pending_description)
+        self.pending_description = ""
         self._build_ui()
         self._refresh_all()
+
+    def _register_description(self, widget: QtCore.QObject, description: str) -> None:
+        widget.setProperty("description_text", description)
+        widget.installEventFilter(self)
+
+    def eventFilter(self, watched, event):
+        if event.type() == QtCore.QEvent.Type.Enter:
+            description = watched.property("description_text")
+            if description:
+                self.pending_description = str(description)
+                self.description_timer.start(500)
+        elif event.type() in {QtCore.QEvent.Type.Leave, QtCore.QEvent.Type.FocusOut}:
+            if watched.property("description_text"):
+                self.description_timer.stop()
+        return super().eventFilter(watched, event)
+
+    def _show_pending_description(self) -> None:
+        if self.pending_description:
+            self.description_label.setText(self.pending_description)
 
     def _build_ui(self):
         central = QtWidgets.QWidget()
@@ -155,15 +261,30 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
         dup_btn.clicked.connect(self._duplicate_stimulus)
         del_btn = QtWidgets.QPushButton("Delete")
         del_btn.clicked.connect(self._delete_stimulus)
+        mirror_btn = QtWidgets.QPushButton("Mirror")
+        mirror_btn.clicked.connect(self._mirror_stimulus)
+        for btn, description in [
+            (add_btn, "Add a new stimulus to the project."),
+            (dup_btn, "Duplicate the selected stimulus, including its primitives."),
+            (del_btn, "Delete the selected stimulus. At least one stimulus remains."),
+            (mirror_btn, "Mirror the selected stimulus in place to the opposite side of the fish."),
+        ]:
+            self._register_description(btn, description)
         left_buttons = QtWidgets.QHBoxLayout()
         left_buttons.addWidget(add_btn)
         left_buttons.addWidget(dup_btn)
         left_buttons.addWidget(del_btn)
+        left_buttons.addWidget(mirror_btn)
         left.addLayout(left_buttons)
         layout.addLayout(left, 1)
 
         middle = QtWidgets.QVBoxLayout()
         self.canvas = PreviewCanvas()
+        self.canvas.grid_point_clicked.connect(self._toggle_grid_point)
+        self._register_description(
+            self.canvas,
+            "Click grid points to build a custom path. Hover highlights the target point; clicking an existing path point removes it.",
+        )
         middle.addWidget(self.canvas, 1)
         self.frame_slider = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
         self.frame_slider.valueChanged.connect(self.canvas.set_frame)
@@ -173,6 +294,8 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
         play_btn.clicked.connect(lambda: self.timer.start(max(1, int(1000 / self.project.global_params.framerate))))
         pause_btn = QtWidgets.QPushButton("Pause")
         pause_btn.clicked.connect(self.timer.stop)
+        self._register_description(play_btn, "Play the generated preview for the selected stimulus.")
+        self._register_description(pause_btn, "Pause the preview playback.")
         preview_buttons.addWidget(play_btn)
         preview_buttons.addWidget(pause_btn)
         middle.addLayout(preview_buttons)
@@ -187,6 +310,9 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
         self.n_dots_spin = QtWidgets.QSpinBox()
         self.n_dots_spin.setRange(1, 8)
         self.n_dots_spin.valueChanged.connect(self._apply_fields)
+        self._register_description(self.key_edit, "Trajectory CSVs use this key as the stimulus file prefix.")
+        self._register_description(self.name_edit, "Human-readable stimulus name saved in project metadata.")
+        self._register_description(self.n_dots_spin, "Number of dot columns generated for this stimulus.")
         form.addRow("Key", self.key_edit)
         form.addRow("Name", self.name_edit)
         form.addRow("Dots", self.n_dots_spin)
@@ -198,11 +324,14 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
         right.addWidget(self.primitive_list)
         primitive_buttons = QtWidgets.QHBoxLayout()
         self.kind_combo = QtWidgets.QComboBox()
-        self.kind_combo.addItems(["static_hold", "arc", "continuous_arc", "flicker", "rocking", "rocking_lr", "waypoint_move"])
+        self.kind_combo.addItems(["static_hold", "arc", "continuous_arc", "flicker", "rocking", "rocking_lr", "waypoint_move", "point_path"])
         add_prim_btn = QtWidgets.QPushButton("Add")
         add_prim_btn.clicked.connect(self._add_primitive)
         del_prim_btn = QtWidgets.QPushButton("Delete")
         del_prim_btn.clicked.connect(self._delete_primitive)
+        self._register_description(self.kind_combo, "Choose the primitive type to add to the selected stimulus.")
+        self._register_description(add_prim_btn, "Append a timeline primitive to the selected stimulus.")
+        self._register_description(del_prim_btn, "Delete the selected timeline primitive.")
         primitive_buttons.addWidget(self.kind_combo)
         primitive_buttons.addWidget(add_prim_btn)
         primitive_buttons.addWidget(del_prim_btn)
@@ -212,6 +341,8 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
         self.primitive_json.setMaximumHeight(160)
         apply_primitive_btn = QtWidgets.QPushButton("Apply Primitive JSON")
         apply_primitive_btn.clicked.connect(self._apply_primitive_json)
+        self._register_description(self.primitive_json, "Edit the selected primitive as JSON when precise values are needed.")
+        self._register_description(apply_primitive_btn, "Apply the primitive JSON editor contents to the selected primitive.")
         right.addWidget(self.primitive_json)
         right.addWidget(apply_primitive_btn)
 
@@ -231,11 +362,58 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
         self.px_width_spin.setValue(1920)
         for widget in [self.framerate_spin, self.radius_spin, self.mm_width_spin, self.px_width_spin]:
             widget.valueChanged.connect(self._apply_global_fields)
+        self._register_description(self.framerate_spin, "Preview and export framerate in frames per second.")
+        self._register_description(self.radius_spin, "Default arc radius used by angle-based primitives.")
+        self._register_description(self.mm_width_spin, "Physical screen width used for calibration metadata.")
+        self._register_description(self.px_width_spin, "Screen width in pixels used for calibration metadata.")
         params_form.addRow("Framerate", self.framerate_spin)
         params_form.addRow("Arc radius cm", self.radius_spin)
         params_form.addRow("Screen width mm", self.mm_width_spin)
         params_form.addRow("Screen width px", self.px_width_spin)
         right.addWidget(params_group)
+
+        grid_group = QtWidgets.QGroupBox("Point grid")
+        grid_form = QtWidgets.QFormLayout(grid_group)
+        self.grid_rings_spin = QtWidgets.QSpinBox()
+        self.grid_rings_spin.setRange(1, 12)
+        self.grid_first_radius_spin = QtWidgets.QDoubleSpinBox()
+        self.grid_first_radius_spin.setRange(0.1, 20)
+        self.grid_first_radius_spin.setSingleStep(0.1)
+        self.grid_spacing_spin = QtWidgets.QDoubleSpinBox()
+        self.grid_spacing_spin.setRange(0.1, 20)
+        self.grid_spacing_spin.setSingleStep(0.1)
+        self.grid_points_spin = QtWidgets.QSpinBox()
+        self.grid_points_spin.setRange(4, 96)
+        self.interval_spin = QtWidgets.QDoubleSpinBox()
+        self.interval_spin.setRange(1, 10000)
+        self.interval_spin.setSuffix(" ms")
+        self.mode_combo = QtWidgets.QComboBox()
+        self.mode_combo.addItems(["bout", "continuous"])
+        for widget in [
+            self.grid_rings_spin,
+            self.grid_first_radius_spin,
+            self.grid_spacing_spin,
+            self.grid_points_spin,
+            self.interval_spin,
+            self.mode_combo,
+        ]:
+            if isinstance(widget, QtWidgets.QComboBox):
+                widget.currentTextChanged.connect(self._apply_grid_fields)
+            else:
+                widget.valueChanged.connect(self._apply_grid_fields)
+        self._register_description(self.grid_rings_spin, "Number of concentric placement rings around the fish.")
+        self._register_description(self.grid_first_radius_spin, "Distance from fish center to the first placement ring in centimeters.")
+        self._register_description(self.grid_spacing_spin, "Distance between neighboring placement rings in centimeters.")
+        self._register_description(self.grid_points_spin, "Number of clickable positions on each ring.")
+        self._register_description(self.interval_spin, "Time between point changes for clicked point paths.")
+        self._register_description(self.mode_combo, "Bout jumps point-to-point; continuous interpolates between points.")
+        grid_form.addRow("Rings", self.grid_rings_spin)
+        grid_form.addRow("First ring cm", self.grid_first_radius_spin)
+        grid_form.addRow("Ring spacing cm", self.grid_spacing_spin)
+        grid_form.addRow("Points / ring", self.grid_points_spin)
+        grid_form.addRow("Interval", self.interval_spin)
+        grid_form.addRow("Mode", self.mode_combo)
+        right.addWidget(grid_group)
 
         file_buttons = QtWidgets.QGridLayout()
         actions = [
@@ -248,8 +426,20 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
         for i, (label, callback) in enumerate(actions):
             btn = QtWidgets.QPushButton(label)
             btn.clicked.connect(callback)
+            descriptions = {
+                "Open Project": "Load a saved stimulus designer project JSON.",
+                "Save Project": "Save the editable project JSON.",
+                "Import Legacy JSON": "Import an older stimulus JSON into the designer model.",
+                "Export CSVs": "Write canonical trajectory CSVs and parameter metadata.",
+                "Launch PsychoPy": "Start PsychoPy playback for an exported stimulus folder.",
+            }
+            self._register_description(btn, descriptions[label])
             file_buttons.addWidget(btn, i // 2, i % 2)
         right.addLayout(file_buttons)
+        self.description_label = QtWidgets.QLabel("Hover over a control to see what it does.")
+        self.description_label.setWordWrap(True)
+        self.description_label.setMinimumHeight(46)
+        right.addWidget(self.description_label)
         layout.addLayout(right, 2)
 
     def _current_stimulus(self) -> StimulusSpec | None:
@@ -284,6 +474,13 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
         self.radius_spin.setValue(self.project.global_params.radius_cm)
         self.mm_width_spin.setValue(self.project.calibration.screen_width_mm)
         self.px_width_spin.setValue(self.project.calibration.screen_width_px)
+        grid = self.project.grid_settings
+        self.grid_rings_spin.setValue(grid.ring_count)
+        self.grid_first_radius_spin.setValue(grid.first_ring_radius_cm)
+        self.grid_spacing_spin.setValue(grid.ring_spacing_cm)
+        self.grid_points_spin.setValue(grid.points_per_ring)
+        self.interval_spin.setValue(grid.movement_interval_ms)
+        self.mode_combo.setCurrentText(grid.movement_mode)
 
     def _refresh_preview(self):
         stim = self._current_stimulus()
@@ -311,6 +508,19 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
         self.project.global_params.radius_cm = self.radius_spin.value()
         self.project.calibration.screen_width_mm = self.mm_width_spin.value()
         self.project.calibration.screen_width_px = self.px_width_spin.value()
+        self._refresh_preview()
+
+    def _apply_grid_fields(self):
+        self.project.grid_settings.ring_count = self.grid_rings_spin.value()
+        self.project.grid_settings.first_ring_radius_cm = self.grid_first_radius_spin.value()
+        self.project.grid_settings.ring_spacing_cm = self.grid_spacing_spin.value()
+        self.project.grid_settings.points_per_ring = self.grid_points_spin.value()
+        self.project.grid_settings.movement_interval_ms = self.interval_spin.value()
+        self.project.grid_settings.movement_mode = self.mode_combo.currentText()
+        primitive = self._current_point_path_primitive(create=False)
+        if primitive is not None:
+            primitive.params["movement_interval_ms"] = self.project.grid_settings.movement_interval_ms
+            primitive.params["mode"] = self.project.grid_settings.movement_mode
         self._refresh_preview()
 
     def _add_stimulus(self):
@@ -341,6 +551,14 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
         del self.project.stimuli[row]
         self._refresh_all()
 
+    def _mirror_stimulus(self):
+        stim = self._current_stimulus()
+        if not stim:
+            return
+        mirror_stimulus_in_place(stim, self.project.global_params)
+        self._refresh_fields()
+        self._refresh_preview()
+
     def _default_primitive_params(self, kind: str) -> dict:
         defaults = {
             "static_hold": {"duration_sec": 1.0, "angle_deg": -30.0},
@@ -350,6 +568,11 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
             "rocking": {"angle_range": [-30.0, -163.0], "rocking_idx_pair": [11, 13], "flickering": False},
             "rocking_lr": {"left_angle_range": [-30.0, -163.0], "right_angle_range": [30.0, 163.0], "rocking_lr_indices": [11, 13], "flickering": False},
             "waypoint_move": {"x_cm": 0.0, "y_cm": 1.0, "duration_sec": 1.0},
+            "point_path": {
+                "points": [],
+                "movement_interval_ms": self.project.grid_settings.movement_interval_ms,
+                "mode": self.project.grid_settings.movement_mode,
+            },
         }
         return defaults[kind]
 
@@ -361,6 +584,46 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
         stim.primitives.append(Primitive(kind, self._default_primitive_params(kind)))
         self._refresh_fields()
         self.primitive_list.setCurrentRow(len(stim.primitives) - 1)
+        self._refresh_preview()
+
+    def _current_point_path_primitive(self, create: bool) -> Primitive | None:
+        stim = self._current_stimulus()
+        if not stim:
+            return None
+        row = self.primitive_list.currentRow()
+        if row >= 0 and row < len(stim.primitives) and stim.primitives[row].kind == "point_path":
+            return stim.primitives[row]
+        for primitive in reversed(stim.primitives):
+            if primitive.kind == "point_path":
+                return primitive
+        if not create:
+            return None
+        primitive = Primitive("point_path", self._default_primitive_params("point_path"))
+        stim.primitives.append(primitive)
+        self._refresh_fields()
+        self.primitive_list.setCurrentRow(len(stim.primitives) - 1)
+        return primitive
+
+    def _toggle_grid_point(self, ring_index: int, point_index: int):
+        primitive = self._current_point_path_primitive(create=True)
+        if primitive is None:
+            return
+        points = list(primitive.params.get("points", []))
+        keep = []
+        removed = False
+        for point in points:
+            if int(point.get("ring_index", -1)) == ring_index and int(point.get("point_index", -1)) == point_index:
+                removed = True
+            else:
+                keep.append(point)
+        if removed:
+            primitive.params["points"] = keep
+        else:
+            keep.append(make_grid_point(ring_index, point_index, self.project.grid_settings, self.project.global_params))
+            primitive.params["points"] = keep
+        primitive.params["movement_interval_ms"] = self.project.grid_settings.movement_interval_ms
+        primitive.params["mode"] = self.project.grid_settings.movement_mode
+        self._load_primitive_editor(self.primitive_list.currentRow())
         self._refresh_preview()
 
     def _delete_primitive(self):
