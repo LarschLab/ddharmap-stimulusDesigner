@@ -1,0 +1,21 @@
+# Python caches
+__pycache__/
+*.py[cod]
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Local environments
+.venv/
+venv/
+env/
+
+# OS/editor noise
+.DS_Store
+.idea/
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.swp
