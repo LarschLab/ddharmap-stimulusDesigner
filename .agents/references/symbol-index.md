@@ -26,6 +26,14 @@ Use this file before editing notebooks or long scripts.
 - `make_stimulus_traces_2` - canonical stimulus table and numeric trace builder.
 - `extract_stimulus_chunks` - extracts stimulus-aligned neural chunks for plotting.
 
+## `src/stimulus_designer.py`
+
+- `Calibration`, `GlobalStimulusParams`, `Primitive`, `StimulusSpec`, `StimulusProject` - editable stimulus-designer project model.
+- `generate_stimulus_dataframe` - trajectory CSV dataframe generator for GUI previews and exports.
+- `export_project` - writes canonical `*_trajectory.csv` files and `parameters/` metadata.
+- `import_legacy_config`, `load_project`, `save_project` - JSON import and editable project persistence.
+- `launch_psychopy_projection` - starts `scripts/stimuli/try_projection.py` for a generated stimulus folder.
+
 ## `src/analysis_tools.py`
 
 - `find_file_with_suffix` - helper for unique suffix-based file lookup.
@@ -60,3 +68,4 @@ Use this file before editing notebooks or long scripts.
 - `Trayectory_flicker.py` owns flicker trajectory and flickering-dot generation.
 - `Trayectory_rocking_stimuli.py` owns same-arc and left/right rocking trajectory generation.
 - `try_projection.py` owns PsychoPy playback, monitor setup, and `stimulus_timing_log.csv`.
+- `stimulus_designer_app.py` owns the PyQt stimulus designer GUI and delegates generation to `src/stimulus_designer.py`.
