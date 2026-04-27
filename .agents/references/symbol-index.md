@@ -28,7 +28,8 @@ Use this file before editing notebooks or long scripts.
 
 ## `src/stimulus_designer.py`
 
-- `Calibration`, `GlobalStimulusParams`, `Primitive`, `StimulusSpec`, `StimulusProject` - editable stimulus-designer project model.
+- `Calibration`, `GlobalStimulusParams`, `GridSettings`, `Primitive`, `StimulusSpec`, `StimulusProject` - editable stimulus-designer project model.
+- `make_grid_point`, `mirror_stimulus_in_place` - point-grid placement and in-place stimulus mirroring helpers.
 - `generate_stimulus_dataframe` - trajectory CSV dataframe generator for GUI previews and exports.
 - `export_project` - writes canonical `*_trajectory.csv` files and `parameters/` metadata.
 - `import_legacy_config`, `load_project`, `save_project` - JSON import and editable project persistence.
