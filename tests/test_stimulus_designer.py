@@ -70,6 +70,14 @@ def test_point_path_continuous_interpolates_between_clicked_points():
     assert df["dot0_x"].nunique() > 1
 
 
+def test_grid_settings_defaults_match_gui_startup_values():
+    grid = GridSettings()
+    assert grid.first_ring_radius_cm == 1.0
+    assert grid.ring_spacing_cm == 0.4
+    assert grid.points_per_ring == 12
+    assert grid.movement_interval_ms == 70.0
+
+
 def test_mirror_stimulus_negates_angles_and_point_path_positions():
     grid = GridSettings(points_per_ring=8)
     point = make_grid_point(0, 1, grid)

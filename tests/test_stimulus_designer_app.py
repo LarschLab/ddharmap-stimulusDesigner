@@ -55,6 +55,21 @@ def test_stimulus_designer_scaled_view_keeps_content_usable(qt_app):
         window.close()
 
 
+def test_stimulus_designer_gui_starts_with_grid_defaults(qt_app):
+    window = StimulusDesignerWindow()
+    try:
+        assert window.project.grid_settings.first_ring_radius_cm == pytest.approx(1.0)
+        assert window.project.grid_settings.ring_spacing_cm == pytest.approx(0.4)
+        assert window.project.grid_settings.points_per_ring == 12
+        assert window.project.grid_settings.movement_interval_ms == pytest.approx(70.0)
+        assert window.grid_first_radius_spin.value() == pytest.approx(1.0)
+        assert window.grid_spacing_spin.value() == pytest.approx(0.4)
+        assert window.grid_points_spin.value() == 12
+        assert window.interval_spin.value() == pytest.approx(70.0)
+    finally:
+        window.close()
+
+
 def test_stimulus_designer_zoom_shortcuts_include_explicit_keys(qt_app):
     window = StimulusDesignerWindow()
     try:

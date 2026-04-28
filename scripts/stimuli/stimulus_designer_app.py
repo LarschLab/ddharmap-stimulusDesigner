@@ -625,6 +625,25 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
         stim = self._current_stimulus()
         if not stim:
             return
+        blockers = [
+            QtCore.QSignalBlocker(widget)
+            for widget in [
+                self.key_edit,
+                self.name_edit,
+                self.n_dots_spin,
+                self.primitive_list,
+                self.framerate_spin,
+                self.radius_spin,
+                self.mm_width_spin,
+                self.px_width_spin,
+                self.grid_rings_spin,
+                self.grid_first_radius_spin,
+                self.grid_spacing_spin,
+                self.grid_points_spin,
+                self.interval_spin,
+                self.mode_combo,
+            ]
+        ]
         self.key_edit.setText(stim.key)
         self.name_edit.setText(stim.name)
         self.n_dots_spin.setValue(stim.n_dots)
@@ -644,6 +663,7 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
         self.grid_points_spin.setValue(grid.points_per_ring)
         self.interval_spin.setValue(grid.movement_interval_ms)
         self.mode_combo.setCurrentText(grid.movement_mode)
+        del blockers
 
     def _refresh_preview(self):
         stim = self._current_stimulus()
