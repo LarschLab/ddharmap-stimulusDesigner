@@ -17,6 +17,16 @@ Append meaningful handoffs using this template.
 ## 2026-04-28
 
 - Date: 2026-04-28
+- Short label: Stimulus designer point grid defaults
+- Slice goal: Update the GUI's startup point-grid defaults for custom path design.
+- Passes completed: Changed `GridSettings` defaults and added a focused owner-module test for the startup values.
+- What changed: New projects now start with first ring radius 1.00 cm, ring spacing 0.40 cm, 12 points per ring, and 70 ms point-path interval.
+- What remains broken: Nothing known.
+- Remaining in-slice work: Manual GUI check in an environment with PyQt6 installed.
+- Next likely breakpoint: Existing saved designer projects keep their serialized grid settings when loaded.
+- Rerun implications: Run `python -m pytest tests/test_stimulus_designer.py tests/test_stimulus_designer_app.py -q`; GUI tests skip when PyQt6 is unavailable.
+
+- Date: 2026-04-28
 - Short label: Stimulus designer zoom shortcut and window resize fixes
 - Slice goal: Make Cmd/Ctrl zoom shortcuts reliable and keep the outer PyQt window sized to the scaled GUI content.
 - Passes completed: Added active-window shortcut override handling and direct keypress fallback handling for Cmd/Ctrl plus, equals, minus, underscore, unicode minus, and zero; made all zoom changes resize the main window; capped resize targets to the current screen's available geometry; added GUI tests for keypress fallback, Cmd-minus shortcut override, and resize bounds.

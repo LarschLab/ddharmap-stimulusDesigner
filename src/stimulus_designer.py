@@ -55,10 +55,10 @@ class GlobalStimulusParams:
 @dataclass
 class GridSettings:
     ring_count: int = 3
-    first_ring_radius_cm: float = 1.8
-    ring_spacing_cm: float = 0.5
-    points_per_ring: int = 24
-    movement_interval_ms: float = 600.0
+    first_ring_radius_cm: float = 1.0
+    ring_spacing_cm: float = 0.4
+    points_per_ring: int = 12
+    movement_interval_ms: float = 700.0
     movement_mode: str = "bout"
 
 
