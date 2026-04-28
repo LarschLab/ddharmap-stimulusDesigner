@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import sys
 from pathlib import Path
 
@@ -30,6 +31,7 @@ from src.stimulus_designer import (
     load_project,
     make_grid_point,
     mirror_stimulus_in_place,
+    primitive_duration_summary,
     project_to_dict,
     save_project,
 )
@@ -60,19 +62,63 @@ class PreviewCanvas(QtWidgets.QWidget):
         self.frame_index = max(0, min(frame_index, max(0, len(self.df) - 1)))
         self.update()
 
+    def _screen_size_cm(self) -> tuple[float, float]:
+        return (
+            max(0.1, self.project.calibration.screen_width_mm / 10.0),
+            max(0.1, self.project.calibration.screen_height_mm / 10.0),
+        )
+
     def _scale(self) -> float:
-        return min(self.width(), self.height()) / 6.0
+        screen_width_cm, screen_height_cm = self._screen_size_cm()
+        margin = 0.9
+        return min(
+            self.width() / (screen_width_cm + margin),
+            self.height() / (screen_height_cm + margin),
+        )
 
     def _to_widget(self, x_cm: float, y_cm: float) -> QtCore.QPointF:
         scale = self._scale()
         return QtCore.QPointF(self.width() / 2.0 + x_cm * scale, self.height() / 2.0 - y_cm * scale)
+
+    def _screen_rect(self) -> QtCore.QRectF:
+        screen_width_cm, screen_height_cm = self._screen_size_cm()
+        scale = self._scale()
+        return QtCore.QRectF(
+            self.width() / 2.0 - screen_width_cm * scale / 2.0,
+            self.height() / 2.0 - screen_height_cm * scale / 2.0,
+            screen_width_cm * scale,
+            screen_height_cm * scale,
+        )
+
+    def _angle_endpoint(self, angle_deg: float, radius_cm: float) -> QtCore.QPointF:
+        theta = math.radians(self.project.global_params.rotation_angle_deg)
+        angle = math.radians(angle_deg)
+        x = radius_cm * math.sin(angle)
+        y = radius_cm * math.cos(angle)
+        xr = x * math.cos(theta) - y * math.sin(theta)
+        yr = x * math.sin(theta) + y * math.cos(theta)
+        return self._to_widget(xr, yr)
+
+    def _visual_field_polygon(self, start_deg: float, end_deg: float, steps: int = 32) -> QtGui.QPolygonF:
+        screen_width_cm, screen_height_cm = self._screen_size_cm()
+        radius_cm = math.hypot(screen_width_cm, screen_height_cm)
+        center = QtCore.QPointF(self.width() / 2.0, self.height() / 2.0)
+        points = [center]
+        if end_deg < start_deg:
+            end_deg += 360.0
+        for index in range(steps + 1):
+            angle = start_deg + (end_deg - start_deg) * index / steps
+            if angle > 180.0:
+                angle -= 360.0
+            points.append(self._angle_endpoint(angle, radius_cm))
+        return QtGui.QPolygonF(points)
 
     def _selected_grid_points(self) -> list[tuple[int, int]]:
         selected: list[tuple[int, int]] = []
         for primitive in self.stimulus.primitives:
             if primitive.kind in {"static_hold", "flicker", "loom"}:
                 points = [primitive.params.get("point")]
-            elif primitive.kind in {"rocking", "rocking_lr", "point_path", "whole_field_grating"}:
+            elif primitive.kind in {"rocking", "rocking_lr", "point_path", "whole_field_grating", "linear"}:
                 points = primitive.params.get("points", [])
             else:
                 continue
@@ -129,23 +175,44 @@ class PreviewCanvas(QtWidgets.QWidget):
 
         center = QtCore.QPointF(self.width() / 2.0, self.height() / 2.0)
         scale = self._scale()
+        screen_rect = self._screen_rect()
+
+        outer_brush = QtGui.QColor("#ecece6")
+        painter.fillRect(self.rect(), outer_brush)
+        painter.fillRect(screen_rect, QtGui.QColor("#f7f7f4"))
+        painter.save()
+        painter.setClipRect(screen_rect)
+        self._draw_visual_field_guides(painter)
 
         grid_pen = QtGui.QPen(QtGui.QColor("#d6d6d0"))
         grid_pen.setWidth(1)
         painter.setPen(grid_pen)
-        for cm in [x * 0.5 for x in range(-6, 7)]:
-            p1 = self._to_widget(cm, -3)
-            p2 = self._to_widget(cm, 3)
+        screen_width_cm, screen_height_cm = self._screen_size_cm()
+        x_min = -screen_width_cm / 2.0
+        x_max = screen_width_cm / 2.0
+        y_min = -screen_height_cm / 2.0
+        y_max = screen_height_cm / 2.0
+        for i in range(math.floor(x_min * 2), math.ceil(x_max * 2) + 1):
+            cm = i * 0.5
+            p1 = self._to_widget(cm, y_min)
+            p2 = self._to_widget(cm, y_max)
             painter.drawLine(p1, p2)
-            p3 = self._to_widget(-3, cm)
-            p4 = self._to_widget(3, cm)
+        for i in range(math.floor(y_min * 2), math.ceil(y_max * 2) + 1):
+            cm = i * 0.5
+            p3 = self._to_widget(x_min, cm)
+            p4 = self._to_widget(x_max, cm)
             painter.drawLine(p3, p4)
 
         axis_pen = QtGui.QPen(QtGui.QColor("#8a8a84"))
         axis_pen.setWidth(2)
         painter.setPen(axis_pen)
-        painter.drawLine(QtCore.QPointF(0, center.y()), QtCore.QPointF(self.width(), center.y()))
-        painter.drawLine(QtCore.QPointF(center.x(), 0), QtCore.QPointF(center.x(), self.height()))
+        painter.drawLine(QtCore.QPointF(screen_rect.left(), center.y()), QtCore.QPointF(screen_rect.right(), center.y()))
+        painter.drawLine(QtCore.QPointF(center.x(), screen_rect.top()), QtCore.QPointF(center.x(), screen_rect.bottom()))
+
+        row = None
+        if not self.df.empty:
+            row = self.df.iloc[self.frame_index]
+            self._draw_grating_preview(painter, row)
 
         fish_pen = QtGui.QPen(QtGui.QColor("#1b1b1b"))
         fish_pen.setWidth(2)
@@ -174,6 +241,7 @@ class PreviewCanvas(QtWidgets.QWidget):
                     color = QtGui.QColor("#c94f3d")
                 else:
                     color = QtGui.QColor("#2f6fbb")
+                color.setAlphaF(0.4)
             elif is_hovered:
                 color = QtGui.QColor("#d7a31f")
             else:
@@ -183,37 +251,62 @@ class PreviewCanvas(QtWidgets.QWidget):
             radius_px = 5 if is_hovered or is_selected else 3
             painter.drawEllipse(pos, radius_px, radius_px)
 
-        if self.df.empty:
-            return
-
-        row = self.df.iloc[self.frame_index]
-        self._draw_grating_preview(painter, row)
-
-        path_pen = QtGui.QPen(QtGui.QColor("#3f7f99"))
-        path_pen.setWidth(2)
-        painter.setPen(path_pen)
-        for dot in self._dot_names():
-            points = [
-                self._to_widget(float(row[f"{dot}_x"]), float(row[f"{dot}_y"]))
-                for _, row in self.df.iloc[:: max(1, len(self.df) // 250)].iterrows()
-            ]
-            for a, b in zip(points[:-1], points[1:]):
-                painter.drawLine(a, b)
-
-        self._draw_loom_preview(painter, row, scale)
-
-        painter.setBrush(QtGui.QColor("#111111"))
-        painter.setPen(QtGui.QPen(QtGui.QColor("#111111")))
-        for dot in self._dot_names():
-            radius = float(row.get(f"{dot}_radius", self.project.global_params.dot_size_cm))
-            if radius <= 0:
-                continue
-            pos = self._to_widget(float(row[f"{dot}_x"]), float(row[f"{dot}_y"]))
-            painter.drawEllipse(pos, max(2.0, radius * scale), max(2.0, radius * scale))
-
         painter.setPen(QtGui.QPen(QtGui.QColor("#303030")))
-        painter.drawText(12, 22, f"Frame {self.frame_index + 1}/{len(self.df)}")
+        if self.df.empty:
+            painter.drawText(12, 22, "No frames")
+        else:
+            path_pen = QtGui.QPen(QtGui.QColor("#3f7f99"))
+            path_pen.setWidth(2)
+            painter.setPen(path_pen)
+            for dot in self._dot_names():
+                points = [
+                    self._to_widget(float(frame_row[f"{dot}_x"]), float(frame_row[f"{dot}_y"]))
+                    for _, frame_row in self.df.iloc[:: max(1, len(self.df) // 250)].iterrows()
+                ]
+                for a, b in zip(points[:-1], points[1:]):
+                    painter.drawLine(a, b)
+
+            self._draw_loom_preview(painter, row, scale)
+
+            painter.setBrush(QtGui.QColor("#111111"))
+            painter.setPen(QtGui.QPen(QtGui.QColor("#111111")))
+            for dot in self._dot_names():
+                radius = float(row.get(f"{dot}_radius", self.project.global_params.dot_size_cm))
+                if radius <= 0:
+                    continue
+                pos = self._to_widget(float(row[f"{dot}_x"]), float(row[f"{dot}_y"]))
+                painter.drawEllipse(pos, max(2.0, radius * scale), max(2.0, radius * scale))
+
+            painter.setPen(QtGui.QPen(QtGui.QColor("#303030")))
+            painter.drawText(12, 22, f"Frame {self.frame_index + 1}/{len(self.df)}")
         painter.drawText(12, 42, "Fish center: 0 mm, 0 mm")
+        painter.restore()
+        boundary_pen = QtGui.QPen(QtGui.QColor("#303030"))
+        boundary_pen.setWidth(2)
+        painter.setPen(boundary_pen)
+        painter.setBrush(QtCore.Qt.BrushStyle.NoBrush)
+        painter.drawRect(screen_rect)
+
+    def _draw_visual_field_guides(self, painter: QtGui.QPainter) -> None:
+        binocular = QtGui.QColor("#6abf8a")
+        binocular.setAlpha(48)
+        blind = QtGui.QColor("#d07777")
+        blind.setAlpha(48)
+        painter.setPen(QtCore.Qt.PenStyle.NoPen)
+        painter.setBrush(binocular)
+        painter.drawPolygon(self._visual_field_polygon(-30.0, 30.0))
+        painter.setBrush(blind)
+        painter.drawPolygon(self._visual_field_polygon(160.0, 200.0))
+
+        guide_pen = QtGui.QPen(QtGui.QColor("#6b6b64"))
+        guide_pen.setWidth(1)
+        guide_pen.setStyle(QtCore.Qt.PenStyle.DashLine)
+        painter.setPen(guide_pen)
+        screen_width_cm, screen_height_cm = self._screen_size_cm()
+        radius_cm = math.hypot(screen_width_cm, screen_height_cm)
+        center = QtCore.QPointF(self.width() / 2.0, self.height() / 2.0)
+        for angle in (-30.0, 30.0, -160.0, 160.0):
+            painter.drawLine(center, self._angle_endpoint(angle, radius_cm))
 
     def _dot_names(self) -> list[str]:
         return sorted({col.rsplit("_", 1)[0] for col in self.df.columns if col.startswith("dot") and col.endswith("_x")})
@@ -247,7 +340,7 @@ class PreviewCanvas(QtWidgets.QWidget):
         black_width_px = max(1.0, thickness_cm * scale)
         angle = -direction
         painter.save()
-        painter.setClipRect(self.rect())
+        painter.setClipRect(self._screen_rect())
         painter.translate(self.width() / 2.0, self.height() / 2.0)
         painter.rotate(angle)
         painter.fillRect(
@@ -428,13 +521,14 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
         form.addRow("Dots", self.n_dots_spin)
         right.addLayout(form)
 
+        self.timeline_label = QtWidgets.QLabel("Timeline primitives")
         self.primitive_list = QtWidgets.QListWidget()
         self.primitive_list.currentRowChanged.connect(self._load_primitive_editor)
-        right.addWidget(QtWidgets.QLabel("Timeline primitives"))
+        right.addWidget(self.timeline_label)
         right.addWidget(self.primitive_list)
         primitive_buttons = QtWidgets.QHBoxLayout()
         self.kind_combo = QtWidgets.QComboBox()
-        self.kind_combo.addItems(["static_hold", "flicker", "rocking", "rocking_lr", "point_path", "whole_field_grating", "loom"])
+        self.kind_combo.addItems(["static_hold", "flicker", "rocking", "rocking_lr", "point_path", "linear", "whole_field_grating", "loom"])
         add_prim_btn = QtWidgets.QPushButton("Add")
         add_prim_btn.clicked.connect(self._add_primitive)
         del_prim_btn = QtWidgets.QPushButton("Delete")
@@ -489,6 +583,10 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
         self.max_radius_spin.setRange(0.001, 1000)
         self.max_radius_spin.setSuffix(" cm")
         self.max_radius_spin.setDecimals(3)
+        self.step_distance_spin = QtWidgets.QDoubleSpinBox()
+        self.step_distance_spin.setRange(0.001, 1000)
+        self.step_distance_spin.setSuffix(" cm")
+        self.step_distance_spin.setDecimals(3)
         self._stimulus_param_rows = []
         for label_text, widget in [
             ("Duration", self.duration_spin),
@@ -500,6 +598,7 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
             ("Speed", self.speed_spin),
             ("Growth speed", self.growth_speed_spin),
             ("Max radius", self.max_radius_spin),
+            ("Step distance", self.step_distance_spin),
         ]:
             label = QtWidgets.QLabel(label_text)
             stimulus_params_form.addRow(label, widget)
@@ -512,6 +611,7 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
             self.speed_spin,
             self.growth_speed_spin,
             self.max_radius_spin,
+            self.step_distance_spin,
         ]:
             widget.valueChanged.connect(self._apply_stimulus_parameter_fields)
         self.primitive_mode_combo.currentTextChanged.connect(self._apply_stimulus_parameter_fields)
@@ -525,6 +625,7 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
         self._register_description(self.speed_spin, "Whole-field grating motion speed.")
         self._register_description(self.growth_speed_spin, "Loom radius growth speed.")
         self._register_description(self.max_radius_spin, "Maximum loom radius; the loom holds here until duration ends.")
+        self._register_description(self.step_distance_spin, "Distance moved along the linear path at each interval.")
         self.stimulus_params_group.setSizePolicy(QtWidgets.QSizePolicy.Policy.Preferred, QtWidgets.QSizePolicy.Policy.Fixed)
         right.addWidget(self.stimulus_params_group)
 
@@ -538,20 +639,30 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
         self.radius_spin.setValue(1.8)
         self.mm_width_spin = QtWidgets.QDoubleSpinBox()
         self.mm_width_spin.setRange(1, 10000)
-        self.mm_width_spin.setValue(590)
+        self.mm_width_spin.setValue(152)
+        self.mm_height_spin = QtWidgets.QDoubleSpinBox()
+        self.mm_height_spin.setRange(1, 10000)
+        self.mm_height_spin.setValue(95)
         self.px_width_spin = QtWidgets.QSpinBox()
         self.px_width_spin.setRange(1, 10000)
-        self.px_width_spin.setValue(1920)
-        for widget in [self.framerate_spin, self.radius_spin, self.mm_width_spin, self.px_width_spin]:
+        self.px_width_spin.setValue(1280)
+        self.px_height_spin = QtWidgets.QSpinBox()
+        self.px_height_spin.setRange(1, 10000)
+        self.px_height_spin.setValue(800)
+        for widget in [self.framerate_spin, self.radius_spin, self.mm_width_spin, self.mm_height_spin, self.px_width_spin, self.px_height_spin]:
             widget.valueChanged.connect(self._apply_global_fields)
         self._register_description(self.framerate_spin, "Preview and export framerate in frames per second.")
         self._register_description(self.radius_spin, "Default arc radius used by angle-based primitives.")
         self._register_description(self.mm_width_spin, "Physical screen width used for calibration metadata.")
+        self._register_description(self.mm_height_spin, "Physical screen height used for calibration metadata.")
         self._register_description(self.px_width_spin, "Screen width in pixels used for calibration metadata.")
+        self._register_description(self.px_height_spin, "Screen height in pixels used for calibration metadata.")
         params_form.addRow("Framerate", self.framerate_spin)
         params_form.addRow("Arc radius cm", self.radius_spin)
         params_form.addRow("Screen width mm", self.mm_width_spin)
+        params_form.addRow("Screen height mm", self.mm_height_spin)
         params_form.addRow("Screen width px", self.px_width_spin)
+        params_form.addRow("Screen height px", self.px_height_spin)
         self.params_group.setSizePolicy(QtWidgets.QSizePolicy.Policy.Preferred, QtWidgets.QSizePolicy.Policy.Fixed)
         self.params_group.setMinimumHeight(self.params_group.sizeHint().height())
         right.addWidget(self.params_group)
@@ -775,7 +886,9 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
                 self.framerate_spin,
                 self.radius_spin,
                 self.mm_width_spin,
+                self.mm_height_spin,
                 self.px_width_spin,
+                self.px_height_spin,
                 self.grid_rings_spin,
                 self.grid_first_radius_spin,
                 self.grid_spacing_spin,
@@ -789,20 +902,28 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
                 self.speed_spin,
                 self.growth_speed_spin,
                 self.max_radius_spin,
+                self.step_distance_spin,
             ]
         ]
         self.key_edit.setText(stim.key)
         self.name_edit.setText(stim.name)
         self.n_dots_spin.setValue(stim.n_dots)
         self.primitive_list.clear()
-        for primitive in stim.primitives:
-            self.primitive_list.addItem(primitive.kind)
+        summaries = primitive_duration_summary(stim, self.project.global_params)
+        total_sec = summaries[-1]["cumulative_sec"] if summaries else 0.0
+        self.timeline_label.setText(f"Timeline primitives ({total_sec:.3f} s total)")
+        for primitive, summary in zip(stim.primitives, summaries):
+            self.primitive_list.addItem(
+                f"{primitive.kind} | {summary['duration_sec']:.3f} s | end {summary['cumulative_sec']:.3f} s"
+            )
         if stim.primitives:
             self.primitive_list.setCurrentRow(0)
         self.framerate_spin.setValue(self.project.global_params.framerate)
         self.radius_spin.setValue(self.project.global_params.radius_cm)
         self.mm_width_spin.setValue(self.project.calibration.screen_width_mm)
+        self.mm_height_spin.setValue(self.project.calibration.screen_height_mm)
         self.px_width_spin.setValue(self.project.calibration.screen_width_px)
+        self.px_height_spin.setValue(self.project.calibration.screen_height_px)
         grid = self.project.grid_settings
         self.grid_rings_spin.setValue(grid.ring_count)
         self.grid_first_radius_spin.setValue(grid.first_ring_radius_cm)
@@ -836,7 +957,9 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
         self.project.global_params.framerate = self.framerate_spin.value()
         self.project.global_params.radius_cm = self.radius_spin.value()
         self.project.calibration.screen_width_mm = self.mm_width_spin.value()
+        self.project.calibration.screen_height_mm = self.mm_height_spin.value()
         self.project.calibration.screen_width_px = self.px_width_spin.value()
+        self.project.calibration.screen_height_px = self.px_height_spin.value()
         self._refresh_preview()
 
     def _apply_grid_fields(self):
@@ -893,11 +1016,17 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
                 "movement_interval_ms": self.project.grid_settings.movement_interval_ms,
                 "mode": self.project.grid_settings.movement_mode,
             },
+            "linear": {
+                "points": [],
+                "movement_interval_ms": self.project.grid_settings.movement_interval_ms,
+                "mode": self.project.grid_settings.movement_mode,
+                "step_distance_cm": 0.2,
+            },
             "whole_field_grating": {
                 "points": [],
-                "duration_sec": 3.0,
+                "duration_sec": 10.0,
                 "bar_thickness_cm": 0.5,
-                "speed_cm_sec": self.project.global_params.speed_cm_sec,
+                "speed_cm_sec": 1.0,
             },
             "loom": {
                 "duration_sec": 3.0,
@@ -935,7 +1064,7 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
             primitive.params["point"] = point
         elif primitive.kind in {"rocking", "rocking_lr"}:
             primitive.params["points"] = self._toggle_limited_point_list(primitive.params.get("points", []), point, limit=2)
-        elif primitive.kind == "whole_field_grating":
+        elif primitive.kind in {"whole_field_grating", "linear"}:
             primitive.params["points"] = self._toggle_limited_point_list(primitive.params.get("points", []), point, limit=2)
         elif primitive.kind == "point_path":
             primitive.params["points"] = self._toggle_limited_point_list(primitive.params.get("points", []), point, limit=None)
@@ -1000,6 +1129,8 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
                 relevant = {"Duration", "Interval", "Flickering"}
             elif primitive.kind == "point_path":
                 relevant = {"Interval", "Mode"}
+            elif primitive.kind == "linear":
+                relevant = {"Interval", "Mode", "Step distance"}
             elif primitive.kind == "whole_field_grating":
                 relevant = {"Duration", "Bar thickness", "Speed"}
             elif primitive.kind == "loom":
@@ -1023,6 +1154,7 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
         self.speed_spin.setValue(float(primitive.params.get("speed_cm_sec", self.project.global_params.speed_cm_sec)))
         self.growth_speed_spin.setValue(float(primitive.params.get("growth_speed_cm_sec", 1.0)))
         self.max_radius_spin.setValue(float(primitive.params.get("max_radius_cm", 3.0)))
+        self.step_distance_spin.setValue(float(primitive.params.get("step_distance_cm", 0.2)))
         del blockers
 
     def _apply_stimulus_parameter_fields(self):
@@ -1031,9 +1163,9 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
             return
         if primitive.kind in {"static_hold", "flicker", "rocking", "rocking_lr", "whole_field_grating", "loom"}:
             primitive.params["duration_sec"] = self.duration_spin.value()
-        if primitive.kind in {"rocking", "rocking_lr", "point_path"}:
+        if primitive.kind in {"rocking", "rocking_lr", "point_path", "linear"}:
             primitive.params["movement_interval_ms"] = self.primitive_interval_spin.value()
-        if primitive.kind == "point_path":
+        if primitive.kind in {"point_path", "linear"}:
             primitive.params["mode"] = self.primitive_mode_combo.currentText()
         if primitive.kind == "flicker":
             primitive.params["flicker_interval_sec"] = self.flicker_interval_spin.value()
@@ -1045,6 +1177,8 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
         if primitive.kind == "loom":
             primitive.params["growth_speed_cm_sec"] = self.growth_speed_spin.value()
             primitive.params["max_radius_cm"] = self.max_radius_spin.value()
+        if primitive.kind == "linear":
+            primitive.params["step_distance_cm"] = self.step_distance_spin.value()
         self._load_primitive_editor(self.primitive_list.currentRow())
         self._refresh_preview()
 
