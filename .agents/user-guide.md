@@ -12,7 +12,7 @@ Good examples:
 
 Expect agents to read `AGENTS.md`, `coding.md`, the top-level router, then the smallest relevant workflow/reference doc. For notebook tasks, agents should inspect package owners before editing notebook cells.
 
-After meaningful changes, agents should report the validation they ran. If work stops with known remaining breakage, they should append the relevant recent-changes log under `.agents/references/`.
+After meaningful changes, agents should report the validation they ran and append the relevant recent-changes log under `.agents/references/`. A meaningful change is one that affects workflow behavior, artifact contracts, public callable surfaces, GUI/runtime behavior, migrations, known limitations, or follow-up validation expectations. Routine edits that are fully obvious from the diff do not need a log entry.
 
 ## Developer Guide
 
