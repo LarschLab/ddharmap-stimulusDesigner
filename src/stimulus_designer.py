@@ -58,7 +58,7 @@ class GridSettings:
     first_ring_radius_cm: float = 1.0
     ring_spacing_cm: float = 0.4
     points_per_ring: int = 12
-    movement_interval_ms: float = 700.0
+    movement_interval_ms: float = 70.0
     movement_mode: str = "bout"
 
 
@@ -92,10 +92,7 @@ def default_project() -> StimulusProject:
                 key="LeB",
                 name="left bout",
                 n_dots=1,
-                primitives=[
-                    Primitive("static_hold", {"duration_sec": 8.0, "angle_deg": -30.0}),
-                    Primitive("arc", {"angle_range": [-30.0, -160.0], "continuous": False}),
-                ],
+                primitives=[],
             )
         ]
     )
@@ -281,6 +278,13 @@ def _point_xy(point: dict[str, Any], params: GlobalStimulusParams) -> tuple[floa
     return float(point.get("x_cm", 0.0)), float(point.get("y_cm", 0.0))
 
 
+def _primitive_point_xy(primitive_params: dict[str, Any], params: GlobalStimulusParams) -> tuple[float, float] | None:
+    point = primitive_params.get("point")
+    if isinstance(point, dict):
+        return _point_xy(point, params)
+    return None
+
+
 def _point_path_rows(path_params: dict[str, Any], params: GlobalStimulusParams) -> list[dict[str, float]]:
     points = list(path_params.get("points", []))
     if not points:
@@ -303,6 +307,33 @@ def _point_path_rows(path_params: dict[str, Any], params: GlobalStimulusParams) 
     return rows
 
 
+def _point_rocking_rows(rocking_params: dict[str, Any], params: GlobalStimulusParams) -> list[dict[str, float]]:
+    points = list(rocking_params.get("points", []))
+    if len(points) < 2:
+        return []
+    x1, y1 = _point_xy(points[0], params)
+    x2, y2 = _point_xy(points[1], params)
+    duration = float(rocking_params.get("duration_sec", 1.0))
+    interval_ms = float(rocking_params.get("movement_interval_ms", params.update_interval_ms))
+    total_frames = max(1, int(round(duration * params.framerate)))
+    frames_per_update = max(1, int(round((interval_ms / 1000.0) * params.framerate)))
+    rows: list[dict[str, float]] = []
+    filled = 0
+    toggle = False
+    while filled < total_frames:
+        block = min(frames_per_update, total_frames - filled)
+        toggle = not toggle
+        x, y = (x1, y1) if toggle else (x2, y2)
+        _append_rows(rows, x, y, params.dot_size_cm, block)
+        filled += block
+    if rocking_params.get("flickering", False):
+        radii = [row["radius"] for row in rows]
+        _apply_flicker(radii, 0, params)
+        for row, radius in zip(rows, radii):
+            row["radius"] = radius
+    return rows
+
+
 def _generate_dot_rows(spec: StimulusSpec, dot_index: int, params: GlobalStimulusParams) -> list[dict[str, float]]:
     rows: list[dict[str, float]] = []
     current_x, current_y = _rotated_position(params.radius_cm, -30.0, params.rotation_angle_deg)
@@ -311,7 +342,10 @@ def _generate_dot_rows(spec: StimulusSpec, dot_index: int, params: GlobalStimulu
         kind = primitive.kind
         p = primitive.params
         if kind == "static_hold":
-            if "angle_deg" in p:
+            point_xy = _primitive_point_xy(p, params)
+            if point_xy is not None:
+                current_x, current_y = point_xy
+            elif "angle_deg" in p:
                 current_x, current_y = _rotated_position(params.radius_cm, float(p["angle_deg"]), params.rotation_angle_deg)
             frames = round(float(p.get("duration_sec", params.static_period_sec)) * params.framerate)
             _append_rows(rows, current_x, current_y, params.dot_size_cm, frames)
@@ -341,11 +375,16 @@ def _generate_dot_rows(spec: StimulusSpec, dot_index: int, params: GlobalStimulu
                     row["radius"] = radius
 
         elif kind == "flicker":
-            angle_range = list(p.get("angle_range", [-30.0, -160.0]))
-            xr, yr, _, total_time = _arc_samples(angle_range, params, False)
-            idx = max(0, min(len(xr) - 1, int(p.get("angle_index", 0))))
-            current_x = float(xr[idx])
-            current_y = float(yr[idx])
+            point_xy = _primitive_point_xy(p, params)
+            total_time = 0.0
+            if point_xy is not None:
+                current_x, current_y = point_xy
+            else:
+                angle_range = list(p.get("angle_range", [-30.0, -160.0]))
+                xr, yr, _, total_time = _arc_samples(angle_range, params, False)
+                idx = max(0, min(len(xr) - 1, int(p.get("angle_index", 0))))
+                current_x = float(xr[idx])
+                current_y = float(yr[idx])
             duration = p.get("duration_sec")
             if duration is None:
                 duration = total_time + params.flicker_interval_sec
@@ -353,24 +392,37 @@ def _generate_dot_rows(spec: StimulusSpec, dot_index: int, params: GlobalStimulu
             start = len(rows)
             _append_rows(rows, current_x, current_y, params.dot_size_cm, round(float(duration) * params.framerate))
             radii = [row["radius"] for row in rows]
-            _apply_flicker(radii, start, params)
+            flicker_params = params
+            if "flicker_interval_sec" in p:
+                flicker_params = GlobalStimulusParams(**{**asdict(params), "flicker_interval_sec": float(p["flicker_interval_sec"])})
+            _apply_flicker(radii, start, flicker_params)
             for row, radius in zip(rows, radii):
                 row["radius"] = radius
 
         elif kind == "rocking":
-            angle_range = list(p.get("angle_range", [-30.0, -163.0]))
-            i1, i2 = p.get("rocking_idx_pair", [11, 13])
-            rows.extend(_rocking_rows(params, angle_range, int(i1), int(i2), bool(p.get("flickering", False))))
-            current_x = rows[-1]["x"]
-            current_y = rows[-1]["y"]
+            point_rows = _point_rocking_rows(p, params)
+            if point_rows:
+                rows.extend(point_rows)
+            else:
+                angle_range = list(p.get("angle_range", [-30.0, -163.0]))
+                i1, i2 = p.get("rocking_idx_pair", [11, 13])
+                rows.extend(_rocking_rows(params, angle_range, int(i1), int(i2), bool(p.get("flickering", False))))
+            if rows:
+                current_x = rows[-1]["x"]
+                current_y = rows[-1]["y"]
 
         elif kind == "rocking_lr":
-            left_range = list(p.get("left_angle_range", [-30.0, -163.0]))
-            right_range = list(p.get("right_angle_range", [30.0, 163.0]))
-            i_left, i_right = p.get("rocking_lr_indices", [11, 13])
-            rows.extend(_rocking_lr_rows(params, left_range, right_range, int(i_left), int(i_right), bool(p.get("flickering", False))))
-            current_x = rows[-1]["x"]
-            current_y = rows[-1]["y"]
+            point_rows = _point_rocking_rows(p, params)
+            if point_rows:
+                rows.extend(point_rows)
+            else:
+                left_range = list(p.get("left_angle_range", [-30.0, -163.0]))
+                right_range = list(p.get("right_angle_range", [30.0, 163.0]))
+                i_left, i_right = p.get("rocking_lr_indices", [11, 13])
+                rows.extend(_rocking_lr_rows(params, left_range, right_range, int(i_left), int(i_right), bool(p.get("flickering", False))))
+            if rows:
+                current_x = rows[-1]["x"]
+                current_y = rows[-1]["y"]
 
         elif kind == "waypoint_move":
             target_x = float(p.get("x_cm", current_x))
@@ -394,8 +446,6 @@ def _generate_dot_rows(spec: StimulusSpec, dot_index: int, params: GlobalStimulu
         else:
             raise ValueError(f"Unknown primitive kind: {kind}")
 
-    if not rows:
-        _append_rows(rows, current_x, current_y, params.dot_size_cm, round(params.static_period_sec * params.framerate))
     return rows
 
 
@@ -449,6 +499,15 @@ def _append_rocking_motion(rows: list[dict[str, float]], x1: float, y1: float, x
 def generate_stimulus_dataframe(spec: StimulusSpec, params: GlobalStimulusParams | None = None) -> pd.DataFrame:
     params = params or GlobalStimulusParams()
     per_dot = [_generate_dot_rows(spec, i, params) for i in range(spec.n_dots)]
+    dot_count = max(1, int(spec.n_dots))
+    if not per_dot or not any(per_dot):
+        return pd.DataFrame(
+            {
+                column: pd.Series(dtype=float)
+                for dot_index in range(dot_count)
+                for column in (f"dot{dot_index}_x", f"dot{dot_index}_y", f"dot{dot_index}_radius")
+            }
+        )
     max_len = max(len(rows) for rows in per_dot)
     data: dict[str, list[float]] = {}
     for dot_index, rows in enumerate(per_dot):
@@ -471,6 +530,8 @@ def export_project(project: StimulusProject, output_dir: str | Path) -> list[Pat
     total_time_sec = 0.0
     for spec in project.stimuli:
         df = generate_stimulus_dataframe(spec, project.global_params)
+        if df.empty:
+            raise ValueError(f"Stimulus {spec.key} has no primitives to export.")
         csv_path = output_path / f"{spec.key}_trajectory.csv"
         df.to_csv(csv_path, index=False)
         written.append(csv_path)

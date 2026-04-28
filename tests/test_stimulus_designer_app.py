@@ -47,7 +47,7 @@ def test_stimulus_designer_scaled_view_keeps_content_usable(qt_app):
     window = StimulusDesignerWindow()
     try:
         assert window.scaled_view.scene() is not None
-        assert window.canvas.df.empty is False
+        assert window.canvas.df.empty
         assert window.stimulus_list.count() == len(window.project.stimuli)
         assert window.scaled_view.minimumWidth() == 1
         assert window.scaled_view.minimumHeight() == 1
@@ -65,7 +65,74 @@ def test_stimulus_designer_gui_starts_with_grid_defaults(qt_app):
         assert window.grid_first_radius_spin.value() == pytest.approx(1.0)
         assert window.grid_spacing_spin.value() == pytest.approx(0.4)
         assert window.grid_points_spin.value() == 12
-        assert window.interval_spin.value() == pytest.approx(70.0)
+        assert window.project.grid_settings.movement_interval_ms == pytest.approx(70.0)
+    finally:
+        window.close()
+
+
+def test_stimulus_designer_add_menu_hides_redundant_primitives(qt_app):
+    window = StimulusDesignerWindow()
+    try:
+        kinds = [window.kind_combo.itemText(i) for i in range(window.kind_combo.count())]
+        assert kinds == ["static_hold", "flicker", "rocking", "rocking_lr", "point_path"]
+        assert "arc" not in kinds
+        assert "continuous_arc" not in kinds
+        assert "waypoint_move" not in kinds
+    finally:
+        window.close()
+
+
+def test_stimulus_designer_add_stimulus_starts_blank(qt_app):
+    window = StimulusDesignerWindow()
+    try:
+        window._add_stimulus()
+        stim = window.project.stimuli[-1]
+        assert stim.primitives == []
+    finally:
+        window.close()
+
+
+def test_stimulus_designer_grid_click_without_selected_primitive_does_not_create_path(qt_app):
+    window = StimulusDesignerWindow()
+    try:
+        stim = window.project.stimuli[0]
+        assert stim.primitives == []
+
+        window._toggle_grid_point(0, 0)
+
+        assert stim.primitives == []
+    finally:
+        window.close()
+
+
+def test_stimulus_designer_grid_click_places_static_hold(qt_app):
+    window = StimulusDesignerWindow()
+    try:
+        window.kind_combo.setCurrentText("static_hold")
+        window._add_primitive()
+
+        window._toggle_grid_point(0, 1)
+
+        primitive = window.project.stimuli[0].primitives[0]
+        assert primitive.kind == "static_hold"
+        assert primitive.params["point"]["ring_index"] == 0
+        assert primitive.params["point"]["point_index"] == 1
+    finally:
+        window.close()
+
+
+def test_stimulus_designer_grid_click_toggles_selected_point_path(qt_app):
+    window = StimulusDesignerWindow()
+    try:
+        window.kind_combo.setCurrentText("point_path")
+        window._add_primitive()
+
+        window._toggle_grid_point(0, 1)
+        window._toggle_grid_point(0, 2)
+        window._toggle_grid_point(0, 1)
+
+        points = window.project.stimuli[0].primitives[0].params["points"]
+        assert [(p["ring_index"], p["point_index"]) for p in points] == [(0, 2)]
     finally:
         window.close()
 
@@ -177,7 +244,7 @@ def test_stimulus_designer_uses_tooltips_instead_of_bottom_description(qt_app):
     try:
         assert window.key_edit.toolTip()
         assert window.canvas.toolTip()
-        assert window.interval_spin.toolTip()
+        assert window.primitive_interval_spin.toolTip()
         assert not hasattr(window, "description_label")
         assert not hasattr(window, "description_timer")
     finally:
@@ -190,8 +257,26 @@ def test_stimulus_designer_right_panel_scrolls_and_groups_keep_rows(qt_app):
         assert isinstance(window.right_scroll, QtWidgets.QScrollArea)
         assert window.right_scroll.widget() is window.right_panel
         assert window.params_group.layout().rowCount() == 4
-        assert window.grid_group.layout().rowCount() == 6
+        assert window.grid_group.layout().rowCount() == 4
         assert window.params_group.minimumHeight() >= window.params_group.sizeHint().height()
         assert window.grid_group.minimumHeight() >= window.grid_group.sizeHint().height()
+    finally:
+        window.close()
+
+
+def test_stimulus_designer_parameter_fields_follow_selected_primitive(qt_app):
+    window = StimulusDesignerWindow()
+    try:
+        window.kind_combo.setCurrentText("static_hold")
+        window._add_primitive()
+        assert not window.duration_spin.isHidden()
+        assert window.primitive_interval_spin.isHidden()
+        assert window.primitive_mode_combo.isHidden()
+
+        window.kind_combo.setCurrentText("point_path")
+        window._add_primitive()
+        assert window.duration_spin.isHidden()
+        assert not window.primitive_interval_spin.isHidden()
+        assert not window.primitive_mode_combo.isHidden()
     finally:
         window.close()
