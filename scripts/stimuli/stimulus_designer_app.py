@@ -210,44 +210,63 @@ class PreviewCanvas(QtWidgets.QWidget):
         return sorted({col.rsplit("_", 1)[0] for col in self.df.columns if col.endswith("_x")})
 
 
+class ScaledWidgetView(QtWidgets.QGraphicsView):
+    def __init__(self, content: QtWidgets.QWidget, design_size: QtCore.QSize, parent=None):
+        super().__init__(parent)
+        self._design_size = design_size
+        self._zoom = 1.0
+        self._scene = QtWidgets.QGraphicsScene(self)
+        self._proxy = self._scene.addWidget(content)
+        self._proxy.setPos(0, 0)
+        self.setScene(self._scene)
+        self.setAlignment(QtCore.Qt.AlignmentFlag.AlignLeft | QtCore.Qt.AlignmentFlag.AlignTop)
+        self.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
+        self.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+        self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.setMinimumSize(1, 1)
+        self._scene.setSceneRect(QtCore.QRectF(QtCore.QPointF(0, 0), QtCore.QSizeF(design_size)))
+
+    @property
+    def zoom(self) -> float:
+        return self._zoom
+
+    def set_zoom(self, zoom: float) -> None:
+        self._zoom = zoom
+        self.resetTransform()
+        self.scale(zoom, zoom)
+
+
 class StimulusDesignerWindow(QtWidgets.QMainWindow):
+    DESIGN_SIZE = QtCore.QSize(1280, 760)
+    MIN_ZOOM = 0.55
+    MAX_ZOOM = 1.50
+    ZOOM_STEP = 0.10
+
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Stimulus Designer")
         self.project = default_project()
         self.current_output_dir: Path | None = None
+        self.zoom_factor = 1.0
         self.timer = QtCore.QTimer(self)
         self.timer.timeout.connect(self._advance_frame)
-        self.description_timer = QtCore.QTimer(self)
-        self.description_timer.setSingleShot(True)
-        self.description_timer.timeout.connect(self._show_pending_description)
-        self.pending_description = ""
         self._build_ui()
+        self._install_zoom_shortcuts()
         self._refresh_all()
+        self._apply_startup_zoom()
 
     def _register_description(self, widget: QtCore.QObject, description: str) -> None:
         widget.setProperty("description_text", description)
-        widget.installEventFilter(self)
-
-    def eventFilter(self, watched, event):
-        if event.type() == QtCore.QEvent.Type.Enter:
-            description = watched.property("description_text")
-            if description:
-                self.pending_description = str(description)
-                self.description_timer.start(500)
-        elif event.type() in {QtCore.QEvent.Type.Leave, QtCore.QEvent.Type.FocusOut}:
-            if watched.property("description_text"):
-                self.description_timer.stop()
-        return super().eventFilter(watched, event)
-
-    def _show_pending_description(self) -> None:
-        if self.pending_description:
-            self.description_label.setText(self.pending_description)
+        if isinstance(widget, QtWidgets.QWidget):
+            widget.setToolTip(description)
 
     def _build_ui(self):
         central = QtWidgets.QWidget()
+        central.setFixedSize(self.DESIGN_SIZE)
         layout = QtWidgets.QHBoxLayout(central)
-        self.setCentralWidget(central)
+        self.scaled_view = ScaledWidgetView(central, self.DESIGN_SIZE, self)
+        self.setCentralWidget(self.scaled_view)
 
         left = QtWidgets.QVBoxLayout()
         self.stimulus_list = QtWidgets.QListWidget()
@@ -301,7 +320,13 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
         middle.addLayout(preview_buttons)
         layout.addLayout(middle, 3)
 
-        right = QtWidgets.QVBoxLayout()
+        self.right_scroll = QtWidgets.QScrollArea()
+        self.right_scroll.setWidgetResizable(True)
+        self.right_scroll.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
+        self.right_scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.right_panel = QtWidgets.QWidget()
+        self.right_scroll.setWidget(self.right_panel)
+        right = QtWidgets.QVBoxLayout(self.right_panel)
         form = QtWidgets.QFormLayout()
         self.key_edit = QtWidgets.QLineEdit()
         self.key_edit.editingFinished.connect(self._apply_fields)
@@ -346,8 +371,8 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
         right.addWidget(self.primitive_json)
         right.addWidget(apply_primitive_btn)
 
-        params_group = QtWidgets.QGroupBox("Global / calibration")
-        params_form = QtWidgets.QFormLayout(params_group)
+        self.params_group = QtWidgets.QGroupBox("Global / calibration")
+        params_form = QtWidgets.QFormLayout(self.params_group)
         self.framerate_spin = QtWidgets.QDoubleSpinBox()
         self.framerate_spin.setRange(1, 240)
         self.framerate_spin.setValue(60)
@@ -370,10 +395,12 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
         params_form.addRow("Arc radius cm", self.radius_spin)
         params_form.addRow("Screen width mm", self.mm_width_spin)
         params_form.addRow("Screen width px", self.px_width_spin)
-        right.addWidget(params_group)
+        self.params_group.setSizePolicy(QtWidgets.QSizePolicy.Policy.Preferred, QtWidgets.QSizePolicy.Policy.Fixed)
+        self.params_group.setMinimumHeight(self.params_group.sizeHint().height())
+        right.addWidget(self.params_group)
 
-        grid_group = QtWidgets.QGroupBox("Point grid")
-        grid_form = QtWidgets.QFormLayout(grid_group)
+        self.grid_group = QtWidgets.QGroupBox("Point grid")
+        grid_form = QtWidgets.QFormLayout(self.grid_group)
         self.grid_rings_spin = QtWidgets.QSpinBox()
         self.grid_rings_spin.setRange(1, 12)
         self.grid_first_radius_spin = QtWidgets.QDoubleSpinBox()
@@ -413,7 +440,9 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
         grid_form.addRow("Points / ring", self.grid_points_spin)
         grid_form.addRow("Interval", self.interval_spin)
         grid_form.addRow("Mode", self.mode_combo)
-        right.addWidget(grid_group)
+        self.grid_group.setSizePolicy(QtWidgets.QSizePolicy.Policy.Preferred, QtWidgets.QSizePolicy.Policy.Fixed)
+        self.grid_group.setMinimumHeight(self.grid_group.sizeHint().height())
+        right.addWidget(self.grid_group)
 
         file_buttons = QtWidgets.QGridLayout()
         actions = [
@@ -436,11 +465,58 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
             self._register_description(btn, descriptions[label])
             file_buttons.addWidget(btn, i // 2, i % 2)
         right.addLayout(file_buttons)
-        self.description_label = QtWidgets.QLabel("Hover over a control to see what it does.")
-        self.description_label.setWordWrap(True)
-        self.description_label.setMinimumHeight(46)
-        right.addWidget(self.description_label)
-        layout.addLayout(right, 2)
+        layout.addWidget(self.right_scroll, 2)
+
+    def _install_zoom_shortcuts(self) -> None:
+        shortcuts = [
+            (QtGui.QKeySequence(QtGui.QKeySequence.StandardKey.ZoomIn), self.zoom_in),
+            (QtGui.QKeySequence("Ctrl++"), self.zoom_in),
+            (QtGui.QKeySequence("Ctrl+="), self.zoom_in),
+            (QtGui.QKeySequence(QtGui.QKeySequence.StandardKey.ZoomOut), self.zoom_out),
+            (QtGui.QKeySequence("Ctrl+-"), self.zoom_out),
+            (QtGui.QKeySequence("Ctrl+0"), self.reset_zoom),
+        ]
+        self.zoom_shortcuts = []
+        for sequence, callback in shortcuts:
+            shortcut = QtGui.QShortcut(sequence, self)
+            shortcut.activated.connect(callback)
+            self.zoom_shortcuts.append(shortcut)
+
+    def _apply_startup_zoom(self) -> None:
+        screen = QtWidgets.QApplication.primaryScreen()
+        if screen is None:
+            self.set_zoom(1.0)
+            self.resize(self.DESIGN_SIZE)
+            return
+
+        available = screen.availableGeometry()
+        width_zoom = available.width() / float(self.DESIGN_SIZE.width())
+        height_zoom = available.height() / float(self.DESIGN_SIZE.height())
+        zoom = min(1.0, width_zoom, height_zoom)
+        self.set_zoom(zoom)
+        self.resize_to_scaled_content()
+
+    def _clamp_zoom(self, zoom: float) -> float:
+        return max(self.MIN_ZOOM, min(self.MAX_ZOOM, zoom))
+
+    def set_zoom(self, zoom: float) -> None:
+        self.zoom_factor = self._clamp_zoom(zoom)
+        self.scaled_view.set_zoom(self.zoom_factor)
+
+    def zoom_in(self) -> None:
+        self.set_zoom(self.zoom_factor + self.ZOOM_STEP)
+
+    def zoom_out(self) -> None:
+        self.set_zoom(self.zoom_factor - self.ZOOM_STEP)
+
+    def reset_zoom(self) -> None:
+        self.set_zoom(1.0)
+
+    def resize_to_scaled_content(self) -> None:
+        self.resize(
+            int(self.DESIGN_SIZE.width() * self.zoom_factor),
+            int(self.DESIGN_SIZE.height() * self.zoom_factor),
+        )
 
     def _current_stimulus(self) -> StimulusSpec | None:
         row = self.stimulus_list.currentRow()
@@ -700,7 +776,6 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
 def main() -> int:
     app = QtWidgets.QApplication(sys.argv)
     window = StimulusDesignerWindow()
-    window.resize(1280, 760)
     window.show()
     return app.exec()
 
