@@ -252,6 +252,9 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
         self.timer = QtCore.QTimer(self)
         self.timer.timeout.connect(self._advance_frame)
         self._build_ui()
+        app = QtWidgets.QApplication.instance()
+        if app is not None:
+            app.installEventFilter(self)
         self._install_zoom_shortcuts()
         self._refresh_all()
         self._apply_startup_zoom()
@@ -472,21 +475,91 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
             (QtGui.QKeySequence(QtGui.QKeySequence.StandardKey.ZoomIn), self.zoom_in),
             (QtGui.QKeySequence("Ctrl++"), self.zoom_in),
             (QtGui.QKeySequence("Ctrl+="), self.zoom_in),
+            (QtGui.QKeySequence("Meta++"), self.zoom_in),
+            (QtGui.QKeySequence("Meta+="), self.zoom_in),
             (QtGui.QKeySequence(QtGui.QKeySequence.StandardKey.ZoomOut), self.zoom_out),
             (QtGui.QKeySequence("Ctrl+-"), self.zoom_out),
+            (QtGui.QKeySequence("Meta+-"), self.zoom_out),
+            (QtGui.QKeySequence("Ctrl+_"), self.zoom_out),
+            (QtGui.QKeySequence("Meta+_"), self.zoom_out),
             (QtGui.QKeySequence("Ctrl+0"), self.reset_zoom),
+            (QtGui.QKeySequence("Meta+0"), self.reset_zoom),
         ]
         self.zoom_shortcuts = []
         for sequence, callback in shortcuts:
             shortcut = QtGui.QShortcut(sequence, self)
+            shortcut.setContext(QtCore.Qt.ShortcutContext.ApplicationShortcut)
             shortcut.activated.connect(callback)
             self.zoom_shortcuts.append(shortcut)
+
+    def eventFilter(self, watched, event):
+        if (
+            event.type() == QtCore.QEvent.Type.ShortcutOverride
+            and self.isActiveWindow()
+            and self._is_zoom_key_event(event)
+        ):
+            event.accept()
+            return False
+        if (
+            event.type() == QtCore.QEvent.Type.KeyPress
+            and self.isActiveWindow()
+            and self._handle_zoom_key_event(event)
+        ):
+            return True
+        return super().eventFilter(watched, event)
+
+    def keyPressEvent(self, event) -> None:
+        if self._handle_zoom_key_event(event):
+            return
+        super().keyPressEvent(event)
+
+    def closeEvent(self, event) -> None:
+        app = QtWidgets.QApplication.instance()
+        if app is not None:
+            app.removeEventFilter(self)
+        super().closeEvent(event)
+
+    def _handle_zoom_key_event(self, event) -> bool:
+        action = self._zoom_action_for_key_event(event)
+        if action == "in":
+            self.zoom_in()
+        elif action == "out":
+            self.zoom_out()
+        elif action == "reset":
+            self.reset_zoom()
+        else:
+            return False
+        event.accept()
+        return True
+
+    def _is_zoom_key_event(self, event) -> bool:
+        return self._zoom_action_for_key_event(event) is not None
+
+    def _zoom_action_for_key_event(self, event) -> str | None:
+        modifiers = event.modifiers()
+        is_zoom_modifier = bool(
+            modifiers
+            & (
+                QtCore.Qt.KeyboardModifier.ControlModifier
+                | QtCore.Qt.KeyboardModifier.MetaModifier
+            )
+        )
+        if not is_zoom_modifier:
+            return None
+        key = event.key()
+        text = event.text()
+        if key in (QtCore.Qt.Key.Key_Plus, QtCore.Qt.Key.Key_Equal) or text in ("+", "="):
+            return "in"
+        if key in (QtCore.Qt.Key.Key_Minus, QtCore.Qt.Key.Key_Underscore) or text in ("-", "_", "−"):
+            return "out"
+        if key == QtCore.Qt.Key.Key_0 or text == "0":
+            return "reset"
+        return None
 
     def _apply_startup_zoom(self) -> None:
         screen = QtWidgets.QApplication.primaryScreen()
         if screen is None:
             self.set_zoom(1.0)
-            self.resize(self.DESIGN_SIZE)
             return
 
         available = screen.availableGeometry()
@@ -494,7 +567,6 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
         height_zoom = available.height() / float(self.DESIGN_SIZE.height())
         zoom = min(1.0, width_zoom, height_zoom)
         self.set_zoom(zoom)
-        self.resize_to_scaled_content()
 
     def _clamp_zoom(self, zoom: float) -> float:
         return max(self.MIN_ZOOM, min(self.MAX_ZOOM, zoom))
@@ -502,6 +574,7 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
     def set_zoom(self, zoom: float) -> None:
         self.zoom_factor = self._clamp_zoom(zoom)
         self.scaled_view.set_zoom(self.zoom_factor)
+        self.resize_to_scaled_content()
 
     def zoom_in(self) -> None:
         self.set_zoom(self.zoom_factor + self.ZOOM_STEP)
@@ -513,10 +586,24 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
         self.set_zoom(1.0)
 
     def resize_to_scaled_content(self) -> None:
-        self.resize(
-            int(self.DESIGN_SIZE.width() * self.zoom_factor),
-            int(self.DESIGN_SIZE.height() * self.zoom_factor),
+        self.resize(self._scaled_window_size())
+
+    def _scaled_window_size(self) -> QtCore.QSize:
+        scaled_width = int(self.DESIGN_SIZE.width() * self.zoom_factor)
+        scaled_height = int(self.DESIGN_SIZE.height() * self.zoom_factor)
+        available = self._available_screen_geometry()
+        if available is None:
+            return QtCore.QSize(scaled_width, scaled_height)
+        return QtCore.QSize(
+            min(scaled_width, available.width()),
+            min(scaled_height, available.height()),
         )
+
+    def _available_screen_geometry(self) -> QtCore.QRect | None:
+        screen = self.screen() or QtWidgets.QApplication.primaryScreen()
+        if screen is None:
+            return None
+        return screen.availableGeometry()
 
     def _current_stimulus(self) -> StimulusSpec | None:
         row = self.stimulus_list.currentRow()
