@@ -43,7 +43,7 @@ class GlobalStimulusParams:
     speed_cm_sec: float = 0.497
     framerate: float = 60.0
     update_interval_ms: float = 600.0
-    static_period_sec: float = 8.0
+    static_period_sec: float = 10.0
     dot_size_cm: float = 0.2
     rotation_angle_deg: float = 45.0
     flicker_interval_sec: float = 0.3
@@ -83,6 +83,23 @@ class StimulusProject:
     global_params: GlobalStimulusParams = field(default_factory=GlobalStimulusParams)
     grid_settings: GridSettings = field(default_factory=GridSettings)
     stimuli: list[StimulusSpec] = field(default_factory=list)
+
+
+VISUAL_COLUMNS = (
+    "grating_active",
+    "grating_x",
+    "grating_y",
+    "grating_direction_deg",
+    "grating_bar_thickness_cm",
+    "grating_speed_cm_sec",
+    "grating_phase_cm",
+    "loom_active",
+    "loom_x",
+    "loom_y",
+    "loom_radius",
+    "loom_growth_speed_cm_sec",
+    "loom_max_radius_cm",
+)
 
 
 def default_project() -> StimulusProject:
@@ -334,6 +351,73 @@ def _point_rocking_rows(rocking_params: dict[str, Any], params: GlobalStimulusPa
     return rows
 
 
+def _direction_from_points(points: list[dict[str, Any]], params: GlobalStimulusParams) -> float | None:
+    if len(points) < 2:
+        return None
+    x0, y0 = _point_xy(points[0], params)
+    x1, y1 = _point_xy(points[1], params)
+    if x0 == x1 and y0 == y1:
+        return None
+    return round(math.degrees(math.atan2(y1 - y0, x1 - x0)), 3)
+
+
+def _grating_rows(grating_params: dict[str, Any], params: GlobalStimulusParams, current_x: float, current_y: float) -> list[dict[str, float]]:
+    points = [point for point in grating_params.get("points", []) if isinstance(point, dict)]
+    direction = _direction_from_points(points, params)
+    if direction is None and "direction_deg" in grating_params:
+        direction = float(grating_params["direction_deg"])
+    if direction is None:
+        return []
+    duration = float(grating_params.get("duration_sec", 3.0))
+    thickness = float(grating_params.get("bar_thickness_cm", 0.5))
+    speed = float(grating_params.get("speed_cm_sec", params.speed_cm_sec))
+    frames = max(1, int(round(duration * params.framerate)))
+    rows: list[dict[str, float]] = []
+    for frame in range(frames):
+        rows.append(
+            {
+                "x": current_x,
+                "y": current_y,
+                "radius": 0.0,
+                "grating_active": 1.0,
+                "grating_x": 0.0,
+                "grating_y": 0.0,
+                "grating_direction_deg": direction,
+                "grating_bar_thickness_cm": thickness,
+                "grating_speed_cm_sec": speed,
+                "grating_phase_cm": round((frame / float(params.framerate)) * speed, 4),
+            }
+        )
+    return rows
+
+
+def _loom_rows(loom_params: dict[str, Any], params: GlobalStimulusParams, current_x: float, current_y: float) -> list[dict[str, float]]:
+    point_xy = _primitive_point_xy(loom_params, params)
+    if point_xy is not None:
+        current_x, current_y = point_xy
+    duration = float(loom_params.get("duration_sec", 3.0))
+    growth_speed = float(loom_params.get("growth_speed_cm_sec", 1.0))
+    max_radius = float(loom_params.get("max_radius_cm", 3.0))
+    frames = max(1, int(round(duration * params.framerate)))
+    rows: list[dict[str, float]] = []
+    for frame in range(frames):
+        radius = min(max_radius, (frame / float(params.framerate)) * growth_speed)
+        rows.append(
+            {
+                "x": current_x,
+                "y": current_y,
+                "radius": 0.0,
+                "loom_active": 1.0,
+                "loom_x": current_x,
+                "loom_y": current_y,
+                "loom_radius": round(radius, 4),
+                "loom_growth_speed_cm_sec": growth_speed,
+                "loom_max_radius_cm": max_radius,
+            }
+        )
+    return rows
+
+
 def _generate_dot_rows(spec: StimulusSpec, dot_index: int, params: GlobalStimulusParams) -> list[dict[str, float]]:
     rows: list[dict[str, float]] = []
     current_x, current_y = _rotated_position(params.radius_cm, -30.0, params.rotation_angle_deg)
@@ -443,6 +527,16 @@ def _generate_dot_rows(spec: StimulusSpec, dot_index: int, params: GlobalStimulu
                 current_x = point_rows[-1]["x"]
                 current_y = point_rows[-1]["y"]
 
+        elif kind == "whole_field_grating":
+            rows.extend(_grating_rows(p, params, current_x, current_y))
+
+        elif kind == "loom":
+            loom_rows = _loom_rows(p, params, current_x, current_y)
+            rows.extend(loom_rows)
+            if loom_rows:
+                current_x = loom_rows[-1]["loom_x"]
+                current_y = loom_rows[-1]["loom_y"]
+
         else:
             raise ValueError(f"Unknown primitive kind: {kind}")
 
@@ -513,9 +607,16 @@ def generate_stimulus_dataframe(spec: StimulusSpec, params: GlobalStimulusParams
     for dot_index, rows in enumerate(per_dot):
         if len(rows) < max_len:
             rows = rows + [rows[-1]] * (max_len - len(rows))
-        data[f"dot{dot_index}_x"] = [row["x"] for row in rows]
-        data[f"dot{dot_index}_y"] = [row["y"] for row in rows]
-        data[f"dot{dot_index}_radius"] = [row["radius"] for row in rows]
+        data[f"dot{dot_index}_x"] = [row.get("x", 0.0) for row in rows]
+        data[f"dot{dot_index}_y"] = [row.get("y", 0.0) for row in rows]
+        data[f"dot{dot_index}_radius"] = [row.get("radius", 0.0) for row in rows]
+    visual_rows = per_dot[0]
+    if len(visual_rows) < max_len:
+        visual_rows = visual_rows + [visual_rows[-1]] * (max_len - len(visual_rows))
+    for column in VISUAL_COLUMNS:
+        values = [row.get(column, 0.0) for row in visual_rows]
+        if any(value != 0.0 for value in values):
+            data[column] = values
     return pd.DataFrame(data)
 
 
@@ -573,7 +674,7 @@ def mirror_stimulus_in_place(spec: StimulusSpec, params: GlobalStimulusParams | 
             p["right_angle_range"] = left
         if primitive.kind == "waypoint_move" and "x_cm" in p:
             p["x_cm"] = -float(p["x_cm"])
-        if primitive.kind == "point_path":
+        if primitive.kind in {"point_path", "whole_field_grating"}:
             mirrored_points = []
             for point in p.get("points", []):
                 mirrored = dict(point)
@@ -590,6 +691,22 @@ def mirror_stimulus_in_place(spec: StimulusSpec, params: GlobalStimulusParams | 
                     mirrored["x_cm"] = -float(mirrored["x_cm"])
                 mirrored_points.append(mirrored)
             p["points"] = mirrored_points
+        if primitive.kind == "loom":
+            point = p.get("point")
+            if isinstance(point, dict):
+                mirrored = dict(point)
+                if "angle_deg" in mirrored:
+                    mirrored["angle_deg"] = -float(mirrored["angle_deg"])
+                    if "points_per_ring" in mirrored:
+                        points_per_ring = max(1, int(mirrored["points_per_ring"]))
+                        mirrored["point_index"] = int(round(((float(mirrored["angle_deg"]) + 180.0) / 360.0) * points_per_ring)) % points_per_ring
+                if "radius_cm" in mirrored and "angle_deg" in mirrored:
+                    x_cm, y_cm = grid_point_to_position(float(mirrored["radius_cm"]), float(mirrored["angle_deg"]), params)
+                    mirrored["x_cm"] = x_cm
+                    mirrored["y_cm"] = y_cm
+                elif "x_cm" in mirrored:
+                    mirrored["x_cm"] = -float(mirrored["x_cm"])
+                p["point"] = mirrored
 
 
 def launch_psychopy_projection(stimuli_dir: str | Path, script_path: str | Path | None = None) -> subprocess.Popen:
