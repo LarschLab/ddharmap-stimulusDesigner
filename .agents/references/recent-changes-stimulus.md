@@ -17,6 +17,26 @@ Append meaningful handoffs using this template.
 ## 2026-04-28
 
 - Date: 2026-04-28
+- Short label: Stimulus designer calibrated screen preview
+- Slice goal: Match the GUI defaults to the measured projector calibration and show the full stimulus screen with fish-relative visual field guides.
+- Passes completed: Updated calibration defaults, exposed height calibration fields, fit preview scaling to the calibrated physical screen rectangle, clipped visual previews to the screen, and added binocular/blind-spot overlays.
+- What changed: `src/stimulus_designer.py` now defaults to 1280 x 800 px projected over 15.2 x 9.5 cm. `scripts/stimuli/stimulus_designer_app.py` now shows width and height calibration controls, draws the full calibrated screen extent, and overlays fish-relative ±30 degree binocular and ±160 degree blind-spot guides.
+- What remains broken: Projection playback itself is unchanged; field guides are GUI-only and need a manual visual check in the PyQt GUI.
+- Remaining in-slice work: Manually confirm screen boundary and guide orientation against the real projection/fish-facing convention.
+- Next likely breakpoint: If the measured projected height differs from the inferred 9.5 cm, update the default height and saved project calibration.
+- Rerun implications: Run `python -m pytest tests/test_stimulus_designer.py tests/test_stimulus_designer_app.py -q`.
+
+- Date: 2026-04-28
+- Short label: Stimulus designer linear primitive and GUI duration updates
+- Slice goal: Add linear point-grid motion, update grating/bout defaults, and make timeline/preview behavior clearer.
+- Passes completed: Added backend linear trajectory rows, GUI primitive controls, timeline duration summaries, grating-under-fish preview layering, translucent selected grid points, and focused tests.
+- What changed: `src/stimulus_designer.py` now defaults bout intervals to 700 ms, supports `linear` primitives with step-distance overshoot semantics, mirrors linear points, and exposes primitive duration summary helpers. `scripts/stimuli/stimulus_designer_app.py` adds the linear primitive, 10 s / 1 cm/s grating defaults, per-primitive and cumulative timeline durations, translucent selected grid dots, and grating preview drawing beneath the fish icon.
+- What remains broken: GUI-specific tests still skip where PyQt6 is unavailable.
+- Remaining in-slice work: Manual GUI smoke test in a PyQt6 environment to confirm the timeline label, linear point selection, and grating layering visually.
+- Next likely breakpoint: Saved projects with serialized 70 ms intervals keep that value until edited; new primitives use 700 ms.
+- Rerun implications: Run `python -m pytest tests/test_stimulus_designer.py tests/test_stimulus_designer_app.py -q`; run a manual PyQt6 GUI check for visual layering.
+
+- Date: 2026-04-28
 - Short label: Stimulus designer grating and loom primitives
 - Slice goal: Add whole-field grating and loom primitives to the point-grid GUI while keeping dot trajectory exports compatible.
 - Passes completed: Added generator rows for grating/loom visual channels, GUI primitive defaults and point placement, preview drawing, PsychoPy playback support, active-column timing extraction, and focused tests.

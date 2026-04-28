@@ -15,10 +15,10 @@ PROJECT_VERSION = 1
 
 @dataclass
 class Calibration:
-    screen_width_px: int = 1920
-    screen_height_px: int = 1080
-    screen_width_mm: float = 590.0
-    screen_height_mm: float = 330.0
+    screen_width_px: int = 1280
+    screen_height_px: int = 800
+    screen_width_mm: float = 152.0
+    screen_height_mm: float = 95.0
 
     @property
     def mm_per_px_x(self) -> float:
@@ -58,7 +58,7 @@ class GridSettings:
     first_ring_radius_cm: float = 1.0
     ring_spacing_cm: float = 0.4
     points_per_ring: int = 12
-    movement_interval_ms: float = 70.0
+    movement_interval_ms: float = 700.0
     movement_mode: str = "bout"
 
 
@@ -324,6 +324,50 @@ def _point_path_rows(path_params: dict[str, Any], params: GlobalStimulusParams) 
     return rows
 
 
+def _linear_step_points(linear_params: dict[str, Any], params: GlobalStimulusParams) -> list[tuple[float, float]]:
+    points = [point for point in linear_params.get("points", []) if isinstance(point, dict)]
+    if len(points) < 2:
+        return []
+    start_x, start_y = _point_xy(points[0], params)
+    end_x, end_y = _point_xy(points[1], params)
+    dx = end_x - start_x
+    dy = end_y - start_y
+    distance = math.hypot(dx, dy)
+    if distance == 0:
+        return []
+    step_distance = max(0.001, float(linear_params.get("step_distance_cm", 0.2)))
+    unit_x = dx / distance
+    unit_y = dy / distance
+    steps_to_exceed = int(math.floor(distance / step_distance)) + 1
+    positions = [(start_x, start_y)]
+    for step in range(1, steps_to_exceed + 1):
+        travel = step * step_distance
+        positions.append((start_x + unit_x * travel, start_y + unit_y * travel))
+    return positions
+
+
+def _linear_rows(linear_params: dict[str, Any], params: GlobalStimulusParams) -> list[dict[str, float]]:
+    positions = _linear_step_points(linear_params, params)
+    if not positions:
+        return []
+    mode = str(linear_params.get("mode", "bout")).lower()
+    interval_ms = float(linear_params.get("movement_interval_ms", params.update_interval_ms))
+    frames = max(1, int(round((interval_ms / 1000.0) * params.framerate)))
+    rows: list[dict[str, float]] = []
+    if mode == "continuous" and len(positions) > 1:
+        _append_rows(rows, positions[0][0], positions[0][1], params.dot_size_cm, frames)
+        for (x0, y0), (x1, y1) in zip(positions[:-1], positions[1:]):
+            for frame in range(frames):
+                frac = (frame + 1) / frames
+                x = x0 + (x1 - x0) * frac
+                y = y0 + (y1 - y0) * frac
+                _append_rows(rows, x, y, params.dot_size_cm, 1)
+    else:
+        for x, y in positions:
+            _append_rows(rows, x, y, params.dot_size_cm, frames)
+    return rows
+
+
 def _point_rocking_rows(rocking_params: dict[str, Any], params: GlobalStimulusParams) -> list[dict[str, float]]:
     points = list(rocking_params.get("points", []))
     if len(points) < 2:
@@ -527,6 +571,13 @@ def _generate_dot_rows(spec: StimulusSpec, dot_index: int, params: GlobalStimulu
                 current_x = point_rows[-1]["x"]
                 current_y = point_rows[-1]["y"]
 
+        elif kind == "linear":
+            linear_rows = _linear_rows(p, params)
+            rows.extend(linear_rows)
+            if linear_rows:
+                current_x = linear_rows[-1]["x"]
+                current_y = linear_rows[-1]["y"]
+
         elif kind == "whole_field_grating":
             rows.extend(_grating_rows(p, params, current_x, current_y))
 
@@ -620,6 +671,23 @@ def generate_stimulus_dataframe(spec: StimulusSpec, params: GlobalStimulusParams
     return pd.DataFrame(data)
 
 
+def primitive_duration_sec(primitive: Primitive, params: GlobalStimulusParams | None = None) -> float:
+    params = params or GlobalStimulusParams()
+    spec = StimulusSpec(primitives=[primitive])
+    return len(generate_stimulus_dataframe(spec, params)) / float(params.framerate)
+
+
+def primitive_duration_summary(spec: StimulusSpec, params: GlobalStimulusParams | None = None) -> list[dict[str, float]]:
+    params = params or GlobalStimulusParams()
+    summaries = []
+    elapsed = 0.0
+    for primitive in spec.primitives:
+        duration = primitive_duration_sec(primitive, params)
+        elapsed += duration
+        summaries.append({"duration_sec": duration, "cumulative_sec": elapsed})
+    return summaries
+
+
 def export_project(project: StimulusProject, output_dir: str | Path) -> list[Path]:
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
@@ -674,7 +742,7 @@ def mirror_stimulus_in_place(spec: StimulusSpec, params: GlobalStimulusParams | 
             p["right_angle_range"] = left
         if primitive.kind == "waypoint_move" and "x_cm" in p:
             p["x_cm"] = -float(p["x_cm"])
-        if primitive.kind in {"point_path", "whole_field_grating"}:
+        if primitive.kind in {"point_path", "whole_field_grating", "linear"}:
             mirrored_points = []
             for point in p.get("points", []):
                 mirrored = dict(point)

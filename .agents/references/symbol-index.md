@@ -31,6 +31,7 @@ Use this file before editing notebooks or long scripts.
 - `Calibration`, `GlobalStimulusParams`, `GridSettings`, `Primitive`, `StimulusSpec`, `StimulusProject` - editable stimulus-designer project model.
 - `make_grid_point`, `mirror_stimulus_in_place` - point-grid placement and in-place stimulus mirroring helpers.
 - `generate_stimulus_dataframe` - trajectory CSV dataframe generator for GUI previews and exports.
+- `primitive_duration_sec`, `primitive_duration_summary` - primitive-level duration helpers for GUI timeline summaries.
 - `export_project` - writes canonical `*_trajectory.csv` files and `parameters/` metadata.
 - `import_legacy_config`, `load_project`, `save_project` - JSON import and editable project persistence.
 - `launch_psychopy_projection` - starts `scripts/stimuli/try_projection.py` for a generated stimulus folder.

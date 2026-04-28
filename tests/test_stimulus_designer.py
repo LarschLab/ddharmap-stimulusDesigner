@@ -18,6 +18,7 @@ from src.stimulus_designer import (
     launch_psychopy_projection,
     make_grid_point,
     mirror_stimulus_in_place,
+    primitive_duration_summary,
     project_from_dict,
 )
 from src.stimuli_timeline import get_motion_timing_simple
@@ -28,6 +29,15 @@ def test_calibration_converts_px_and_cm():
     calibration = Calibration(screen_width_px=1000, screen_height_px=500, screen_width_mm=500, screen_height_mm=250)
     assert calibration.px_to_mm(10, 20) == (5.0, 10.0)
     assert calibration.cm_to_px(1.0, 2.0) == (20.0, 40.0)
+
+
+def test_calibration_defaults_match_projector_setup():
+    calibration = Calibration()
+    assert calibration.screen_width_px == 1280
+    assert calibration.screen_height_px == 800
+    assert calibration.screen_width_mm == pytest.approx(152.0)
+    assert calibration.screen_height_mm == pytest.approx(95.0)
+    assert calibration.mm_per_px_x == pytest.approx(calibration.mm_per_px_y)
 
 
 def test_arc_generation_uses_canonical_columns():
@@ -137,7 +147,7 @@ def test_grid_settings_defaults_match_gui_startup_values():
     assert grid.first_ring_radius_cm == 1.0
     assert grid.ring_spacing_cm == 0.4
     assert grid.points_per_ring == 12
-    assert grid.movement_interval_ms == 70.0
+    assert grid.movement_interval_ms == 700.0
 
 
 def test_static_period_default_is_ten_seconds():
@@ -170,6 +180,79 @@ def test_whole_field_grating_generates_visual_columns():
     assert df["grating_bar_thickness_cm"].iloc[0] == pytest.approx(0.25)
     assert df["grating_speed_cm_sec"].iloc[0] == pytest.approx(2.0)
     assert df["grating_phase_cm"].iloc[-1] > df["grating_phase_cm"].iloc[0]
+
+
+def test_linear_bout_steps_until_endpoint_is_exceeded():
+    params = GlobalStimulusParams(framerate=10)
+    spec = StimulusSpec(
+        key="Linear",
+        primitives=[
+            Primitive(
+                "linear",
+                {
+                    "points": [
+                        {"x_cm": 0.0, "y_cm": 0.0},
+                        {"x_cm": 0.5, "y_cm": 0.0},
+                    ],
+                    "movement_interval_ms": 100,
+                    "mode": "bout",
+                    "step_distance_cm": 0.2,
+                },
+            )
+        ],
+    )
+    df = generate_stimulus_dataframe(spec, params)
+    assert len(df) == 4
+    assert list(df["dot0_x"]) == pytest.approx([0.0, 0.2, 0.4, 0.6])
+    assert df["dot0_y"].tolist() == [0.0, 0.0, 0.0, 0.0]
+
+
+def test_linear_continuous_interpolates_between_step_positions():
+    params = GlobalStimulusParams(framerate=10)
+    spec = StimulusSpec(
+        key="Linear",
+        primitives=[
+            Primitive(
+                "linear",
+                {
+                    "points": [
+                        {"x_cm": 0.0, "y_cm": 0.0},
+                        {"x_cm": 0.3, "y_cm": 0.0},
+                    ],
+                    "movement_interval_ms": 200,
+                    "mode": "continuous",
+                    "step_distance_cm": 0.2,
+                },
+            )
+        ],
+    )
+    df = generate_stimulus_dataframe(spec, params)
+    assert len(df) == 6
+    assert df.iloc[0]["dot0_x"] == pytest.approx(0.0)
+    assert df.iloc[-1]["dot0_x"] == pytest.approx(0.4)
+    assert df["dot0_x"].nunique() > 3
+
+
+def test_primitive_duration_summary_reports_cumulative_times():
+    spec = StimulusSpec(
+        key="Durations",
+        primitives=[
+            Primitive("static_hold", {"duration_sec": 1.0}),
+            Primitive(
+                "linear",
+                {
+                    "points": [{"x_cm": 0.0, "y_cm": 0.0}, {"x_cm": 0.3, "y_cm": 0.0}],
+                    "movement_interval_ms": 100,
+                    "mode": "bout",
+                    "step_distance_cm": 0.2,
+                },
+            ),
+        ],
+    )
+    summaries = primitive_duration_summary(spec, GlobalStimulusParams(framerate=10))
+    assert summaries[0] == {"duration_sec": 1.0, "cumulative_sec": 1.0}
+    assert summaries[1]["duration_sec"] == pytest.approx(0.3)
+    assert summaries[1]["cumulative_sec"] == pytest.approx(1.3)
 
 
 def test_whole_field_grating_needs_direction_points():
@@ -234,6 +317,7 @@ def test_mirror_stimulus_negates_angles_and_point_path_positions():
             Primitive("static_hold", {"angle_deg": -30.0}),
             Primitive("arc", {"angle_range": [-30.0, -160.0]}),
             Primitive("point_path", {"points": [point], "movement_interval_ms": 600, "mode": "bout"}),
+            Primitive("linear", {"points": [point, make_grid_point(0, 2, grid)], "movement_interval_ms": 600, "mode": "bout"}),
         ],
     )
     mirror_stimulus_in_place(spec)
@@ -243,6 +327,8 @@ def test_mirror_stimulus_negates_angles_and_point_path_positions():
     assert mirrored_point["angle_deg"] == -point["angle_deg"]
     assert mirrored_point["point_index"] != point["point_index"]
     assert mirrored_point["x_cm"] != point["x_cm"]
+    mirrored_linear_point = spec.primitives[3].params["points"][0]
+    assert mirrored_linear_point["angle_deg"] == -point["angle_deg"]
 
 
 def test_project_from_dict_loads_legacy_without_grid_settings():
