@@ -17,6 +17,16 @@ Append meaningful handoffs using this template.
 ## 2026-04-28
 
 - Date: 2026-04-28
+- Short label: Stimulus designer zoom shortcut and window resize fixes
+- Slice goal: Make Cmd/Ctrl zoom shortcuts reliable and keep the outer PyQt window sized to the scaled GUI content.
+- Passes completed: Added active-window shortcut override handling and direct keypress fallback handling for Cmd/Ctrl plus, equals, minus, underscore, unicode minus, and zero; made all zoom changes resize the main window; capped resize targets to the current screen's available geometry; added GUI tests for keypress fallback, Cmd-minus shortcut override, and resize bounds.
+- What changed: `scripts/stimuli/stimulus_designer_app.py` now resizes after `set_zoom()`, registers explicit Ctrl and Meta shortcuts with application shortcut context, and recognizes zoom shortcuts even when native `QShortcut` sequence matching differs by platform, keyboard layout, or focused child widget. `tests/test_stimulus_designer_app.py` covers the new behavior when PyQt6 is installed.
+- What remains broken: PyQt6 is not installed in the current execution environment, so GUI-specific tests may still skip here.
+- Remaining in-slice work: Manual macOS smoke test in the PyQt6 environment to confirm native Cmd +, Cmd -, and Cmd 0 behavior with a visible window.
+- Next likely breakpoint: Qt may report keyboard keys differently on non-US layouts, but both `+` and `=` are now accepted for zoom in.
+- Rerun implications: Run `python -m pytest tests/test_stimulus_designer.py tests/test_stimulus_designer_app.py -q`; install/activate PyQt6 to exercise GUI tests instead of skip behavior.
+
+- Date: 2026-04-28
 - Short label: Stimulus designer GUI scaling and layout fixes
 - Slice goal: Make the PyQt stimulus designer usable on smaller screens with proportional app zoom, reliable macOS zoom shortcuts, hover help boxes, and non-compressed right-panel fields.
 - Passes completed: Added whole-app scaling wrapper; added explicit zoom shortcuts; replaced bottom description label with native Qt tooltips; moved the right-side editor panel into a vertical scroll area; added optional PyQt GUI tests.
