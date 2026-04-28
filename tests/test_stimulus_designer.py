@@ -6,6 +6,7 @@ import pytest
 
 from src.stimulus_designer import (
     Calibration,
+    GlobalStimulusParams,
     GridSettings,
     Primitive,
     StimulusProject,
@@ -19,6 +20,8 @@ from src.stimulus_designer import (
     mirror_stimulus_in_place,
     project_from_dict,
 )
+from src.stimuli_timeline import get_motion_timing_simple
+from scripts.stimuli.try_projection import _dot_names_from_columns
 
 
 def test_calibration_converts_px_and_cm():
@@ -135,6 +138,91 @@ def test_grid_settings_defaults_match_gui_startup_values():
     assert grid.ring_spacing_cm == 0.4
     assert grid.points_per_ring == 12
     assert grid.movement_interval_ms == 70.0
+
+
+def test_static_period_default_is_ten_seconds():
+    assert GlobalStimulusParams().static_period_sec == 10.0
+
+
+def test_whole_field_grating_generates_visual_columns():
+    grid = GridSettings(points_per_ring=4)
+    p1 = make_grid_point(0, 0, grid)
+    p2 = make_grid_point(0, 1, grid)
+    spec = StimulusSpec(
+        key="Grating",
+        primitives=[
+            Primitive(
+                "whole_field_grating",
+                {
+                    "points": [p1, p2],
+                    "duration_sec": 0.5,
+                    "bar_thickness_cm": 0.25,
+                    "speed_cm_sec": 2.0,
+                },
+            )
+        ],
+    )
+    df = generate_stimulus_dataframe(spec)
+    assert len(df) == 30
+    assert {"dot0_x", "dot0_y", "dot0_radius", "grating_active", "grating_phase_cm"}.issubset(df.columns)
+    assert set(df["dot0_radius"]) == {0.0}
+    assert set(df["grating_active"]) == {1.0}
+    assert df["grating_bar_thickness_cm"].iloc[0] == pytest.approx(0.25)
+    assert df["grating_speed_cm_sec"].iloc[0] == pytest.approx(2.0)
+    assert df["grating_phase_cm"].iloc[-1] > df["grating_phase_cm"].iloc[0]
+
+
+def test_whole_field_grating_needs_direction_points():
+    spec = StimulusSpec(
+        key="Grating",
+        primitives=[Primitive("whole_field_grating", {"points": [], "duration_sec": 0.5})],
+    )
+    df = generate_stimulus_dataframe(spec)
+    assert df.empty
+
+
+def test_loom_grows_clamps_and_holds_until_duration():
+    params = GlobalStimulusParams(framerate=10)
+    spec = StimulusSpec(
+        key="Loom",
+        primitives=[
+            Primitive(
+                "loom",
+                {
+                    "duration_sec": 1.0,
+                    "growth_speed_cm_sec": 2.0,
+                    "max_radius_cm": 1.0,
+                },
+            )
+        ],
+    )
+    df = generate_stimulus_dataframe(spec, params)
+    assert len(df) == 10
+    assert set(df["loom_active"]) == {1.0}
+    assert df["loom_radius"].iloc[0] == pytest.approx(0.0)
+    assert df["loom_radius"].max() == pytest.approx(1.0)
+    assert df["loom_radius"].iloc[-1] == pytest.approx(1.0)
+
+
+def test_motion_timing_uses_visual_active_columns(tmp_path):
+    path = tmp_path / "Grating_trajectory.csv"
+    pd.DataFrame(
+        {
+            "dot0_x": [0.0, 0.0, 0.0],
+            "dot0_y": [0.0, 0.0, 0.0],
+            "dot0_radius": [0.0, 0.0, 0.0],
+            "grating_active": [0.0, 1.0, 1.0],
+        }
+    ).to_csv(path, index=False)
+    timing = get_motion_timing_simple(path, framerate=10)
+    assert timing["motion_start_frame"] == 1
+
+
+def test_projection_dot_names_ignore_visual_columns():
+    names = _dot_names_from_columns(
+        ["dot0_x", "dot0_y", "dot1_x", "grating_x", "loom_x", "grating_active"]
+    )
+    assert names == ["dot0", "dot1"]
 
 
 def test_mirror_stimulus_negates_angles_and_point_path_positions():

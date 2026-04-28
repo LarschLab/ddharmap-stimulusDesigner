@@ -70,9 +70,9 @@ class PreviewCanvas(QtWidgets.QWidget):
     def _selected_grid_points(self) -> list[tuple[int, int]]:
         selected: list[tuple[int, int]] = []
         for primitive in self.stimulus.primitives:
-            if primitive.kind in {"static_hold", "flicker"}:
+            if primitive.kind in {"static_hold", "flicker", "loom"}:
                 points = [primitive.params.get("point")]
-            elif primitive.kind in {"rocking", "rocking_lr", "point_path"}:
+            elif primitive.kind in {"rocking", "rocking_lr", "point_path", "whole_field_grating"}:
                 points = primitive.params.get("points", [])
             else:
                 continue
@@ -151,8 +151,7 @@ class PreviewCanvas(QtWidgets.QWidget):
         fish_pen.setWidth(2)
         painter.setPen(fish_pen)
         painter.setBrush(QtGui.QColor("#d9efe7"))
-        painter.drawEllipse(center, 12, 26)
-        painter.drawLine(center + QtCore.QPointF(0, -34), center + QtCore.QPointF(0, 34))
+        self._draw_fish_icon(painter, center)
 
         selected_points = self._selected_grid_points()
         selected_lookup = set(selected_points)
@@ -187,6 +186,9 @@ class PreviewCanvas(QtWidgets.QWidget):
         if self.df.empty:
             return
 
+        row = self.df.iloc[self.frame_index]
+        self._draw_grating_preview(painter, row)
+
         path_pen = QtGui.QPen(QtGui.QColor("#3f7f99"))
         path_pen.setWidth(2)
         painter.setPen(path_pen)
@@ -198,7 +200,8 @@ class PreviewCanvas(QtWidgets.QWidget):
             for a, b in zip(points[:-1], points[1:]):
                 painter.drawLine(a, b)
 
-        row = self.df.iloc[self.frame_index]
+        self._draw_loom_preview(painter, row, scale)
+
         painter.setBrush(QtGui.QColor("#111111"))
         painter.setPen(QtGui.QPen(QtGui.QColor("#111111")))
         for dot in self._dot_names():
@@ -213,7 +216,80 @@ class PreviewCanvas(QtWidgets.QWidget):
         painter.drawText(12, 42, "Fish center: 0 mm, 0 mm")
 
     def _dot_names(self) -> list[str]:
-        return sorted({col.rsplit("_", 1)[0] for col in self.df.columns if col.endswith("_x")})
+        return sorted({col.rsplit("_", 1)[0] for col in self.df.columns if col.startswith("dot") and col.endswith("_x")})
+
+    def _draw_fish_icon(self, painter: QtGui.QPainter, center: QtCore.QPointF) -> None:
+        painter.save()
+        painter.translate(center)
+        painter.rotate(-45)
+        painter.drawEllipse(QtCore.QPointF(0, 0), 12, 26)
+        tail = QtGui.QPolygonF(
+            [
+                QtCore.QPointF(0, 28),
+                QtCore.QPointF(-10, 42),
+                QtCore.QPointF(10, 42),
+            ]
+        )
+        painter.drawPolygon(tail)
+        painter.setBrush(QtGui.QColor("#1b1b1b"))
+        painter.drawEllipse(QtCore.QPointF(-5, -18), 2.2, 2.2)
+        painter.drawEllipse(QtCore.QPointF(5, -18), 2.2, 2.2)
+        painter.restore()
+
+    def _draw_grating_preview(self, painter: QtGui.QPainter, row) -> None:
+        if float(row.get("grating_active", 0.0)) <= 0:
+            return
+        direction = float(row.get("grating_direction_deg", 0.0))
+        thickness_cm = max(0.05, float(row.get("grating_bar_thickness_cm", 0.5)))
+        phase_cm = float(row.get("grating_phase_cm", 0.0))
+        scale = self._scale()
+        spacing_px = thickness_cm * scale * 2.0
+        black_width_px = max(1.0, thickness_cm * scale)
+        angle = -direction
+        painter.save()
+        painter.setClipRect(self.rect())
+        painter.translate(self.width() / 2.0, self.height() / 2.0)
+        painter.rotate(angle)
+        painter.fillRect(
+            QtCore.QRectF(-self.width(), -self.height(), self.width() * 2.0, self.height() * 2.0),
+            QtGui.QColor("#ffffff"),
+        )
+        painter.setPen(QtCore.Qt.PenStyle.NoPen)
+        painter.setBrush(QtGui.QColor("#111111"))
+        offset = (phase_cm * scale) % spacing_px
+        start = -self.width() - self.height() - spacing_px
+        end = self.width() + self.height() + spacing_px
+        pos = start + offset
+        while pos < end:
+            painter.drawRect(QtCore.QRectF(pos, -end, black_width_px, end * 2.0))
+            pos += spacing_px
+        painter.restore()
+
+        points = self._selected_grating_points()
+        if len(points) >= 2:
+            p0 = self._to_widget(float(points[0]["x_cm"]), float(points[0]["y_cm"]))
+            p1 = self._to_widget(float(points[1]["x_cm"]), float(points[1]["y_cm"]))
+            arrow_pen = QtGui.QPen(QtGui.QColor("#c94f3d"))
+            arrow_pen.setWidth(3)
+            painter.setPen(arrow_pen)
+            painter.drawLine(p0, p1)
+
+    def _selected_grating_points(self) -> list[dict]:
+        for primitive in self.stimulus.primitives:
+            if primitive.kind == "whole_field_grating":
+                return [point for point in primitive.params.get("points", []) if isinstance(point, dict)]
+        return []
+
+    def _draw_loom_preview(self, painter: QtGui.QPainter, row, scale: float) -> None:
+        if float(row.get("loom_active", 0.0)) <= 0:
+            return
+        radius = float(row.get("loom_radius", 0.0))
+        if radius <= 0:
+            return
+        pos = self._to_widget(float(row.get("loom_x", 0.0)), float(row.get("loom_y", 0.0)))
+        painter.setBrush(QtGui.QColor("#111111"))
+        painter.setPen(QtGui.QPen(QtGui.QColor("#111111")))
+        painter.drawEllipse(pos, radius * scale, radius * scale)
 
 
 class ScaledWidgetView(QtWidgets.QGraphicsView):
@@ -358,7 +434,7 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
         right.addWidget(self.primitive_list)
         primitive_buttons = QtWidgets.QHBoxLayout()
         self.kind_combo = QtWidgets.QComboBox()
-        self.kind_combo.addItems(["static_hold", "flicker", "rocking", "rocking_lr", "point_path"])
+        self.kind_combo.addItems(["static_hold", "flicker", "rocking", "rocking_lr", "point_path", "whole_field_grating", "loom"])
         add_prim_btn = QtWidgets.QPushButton("Add")
         add_prim_btn.clicked.connect(self._add_primitive)
         del_prim_btn = QtWidgets.QPushButton("Delete")
@@ -397,6 +473,22 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
         self.flicker_interval_spin.setSuffix(" s")
         self.flicker_interval_spin.setDecimals(3)
         self.flickering_check = QtWidgets.QCheckBox()
+        self.bar_thickness_spin = QtWidgets.QDoubleSpinBox()
+        self.bar_thickness_spin.setRange(0.01, 100)
+        self.bar_thickness_spin.setSuffix(" cm")
+        self.bar_thickness_spin.setDecimals(3)
+        self.speed_spin = QtWidgets.QDoubleSpinBox()
+        self.speed_spin.setRange(0.001, 1000)
+        self.speed_spin.setSuffix(" cm/s")
+        self.speed_spin.setDecimals(3)
+        self.growth_speed_spin = QtWidgets.QDoubleSpinBox()
+        self.growth_speed_spin.setRange(0.001, 1000)
+        self.growth_speed_spin.setSuffix(" cm/s")
+        self.growth_speed_spin.setDecimals(3)
+        self.max_radius_spin = QtWidgets.QDoubleSpinBox()
+        self.max_radius_spin.setRange(0.001, 1000)
+        self.max_radius_spin.setSuffix(" cm")
+        self.max_radius_spin.setDecimals(3)
         self._stimulus_param_rows = []
         for label_text, widget in [
             ("Duration", self.duration_spin),
@@ -404,6 +496,10 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
             ("Mode", self.primitive_mode_combo),
             ("Flicker interval", self.flicker_interval_spin),
             ("Flickering", self.flickering_check),
+            ("Bar thickness", self.bar_thickness_spin),
+            ("Speed", self.speed_spin),
+            ("Growth speed", self.growth_speed_spin),
+            ("Max radius", self.max_radius_spin),
         ]:
             label = QtWidgets.QLabel(label_text)
             stimulus_params_form.addRow(label, widget)
@@ -412,6 +508,10 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
             self.duration_spin,
             self.primitive_interval_spin,
             self.flicker_interval_spin,
+            self.bar_thickness_spin,
+            self.speed_spin,
+            self.growth_speed_spin,
+            self.max_radius_spin,
         ]:
             widget.valueChanged.connect(self._apply_stimulus_parameter_fields)
         self.primitive_mode_combo.currentTextChanged.connect(self._apply_stimulus_parameter_fields)
@@ -421,6 +521,10 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
         self._register_description(self.primitive_mode_combo, "Bout jumps point-to-point; continuous interpolates between points.")
         self._register_description(self.flicker_interval_spin, "Flicker on/off interval for the selected primitive.")
         self._register_description(self.flickering_check, "Apply flickering while the selected primitive is active.")
+        self._register_description(self.bar_thickness_spin, "Black and white bar thickness for whole-field gratings.")
+        self._register_description(self.speed_spin, "Whole-field grating motion speed.")
+        self._register_description(self.growth_speed_spin, "Loom radius growth speed.")
+        self._register_description(self.max_radius_spin, "Maximum loom radius; the loom holds here until duration ends.")
         self.stimulus_params_group.setSizePolicy(QtWidgets.QSizePolicy.Policy.Preferred, QtWidgets.QSizePolicy.Policy.Fixed)
         right.addWidget(self.stimulus_params_group)
 
@@ -681,6 +785,10 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
                 self.primitive_mode_combo,
                 self.flicker_interval_spin,
                 self.flickering_check,
+                self.bar_thickness_spin,
+                self.speed_spin,
+                self.growth_speed_spin,
+                self.max_radius_spin,
             ]
         ]
         self.key_edit.setText(stim.key)
@@ -776,7 +884,7 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
 
     def _default_primitive_params(self, kind: str) -> dict:
         defaults = {
-            "static_hold": {"duration_sec": 1.0},
+            "static_hold": {"duration_sec": 10.0},
             "flicker": {"duration_sec": 3.0, "flicker_interval_sec": self.project.global_params.flicker_interval_sec},
             "rocking": {"points": [], "duration_sec": 1.0, "movement_interval_ms": self.project.grid_settings.movement_interval_ms, "flickering": False},
             "rocking_lr": {"points": [], "duration_sec": 1.0, "movement_interval_ms": self.project.grid_settings.movement_interval_ms, "flickering": False},
@@ -784,6 +892,17 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
                 "points": [],
                 "movement_interval_ms": self.project.grid_settings.movement_interval_ms,
                 "mode": self.project.grid_settings.movement_mode,
+            },
+            "whole_field_grating": {
+                "points": [],
+                "duration_sec": 3.0,
+                "bar_thickness_cm": 0.5,
+                "speed_cm_sec": self.project.global_params.speed_cm_sec,
+            },
+            "loom": {
+                "duration_sec": 3.0,
+                "growth_speed_cm_sec": 1.0,
+                "max_radius_cm": 3.0,
             },
         }
         return defaults[kind]
@@ -812,9 +931,11 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
         if primitive is None:
             return
         point = make_grid_point(ring_index, point_index, self.project.grid_settings, self.project.global_params)
-        if primitive.kind in {"static_hold", "flicker"}:
+        if primitive.kind in {"static_hold", "flicker", "loom"}:
             primitive.params["point"] = point
         elif primitive.kind in {"rocking", "rocking_lr"}:
+            primitive.params["points"] = self._toggle_limited_point_list(primitive.params.get("points", []), point, limit=2)
+        elif primitive.kind == "whole_field_grating":
             primitive.params["points"] = self._toggle_limited_point_list(primitive.params.get("points", []), point, limit=2)
         elif primitive.kind == "point_path":
             primitive.params["points"] = self._toggle_limited_point_list(primitive.params.get("points", []), point, limit=None)
@@ -879,6 +1000,10 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
                 relevant = {"Duration", "Interval", "Flickering"}
             elif primitive.kind == "point_path":
                 relevant = {"Interval", "Mode"}
+            elif primitive.kind == "whole_field_grating":
+                relevant = {"Duration", "Bar thickness", "Speed"}
+            elif primitive.kind == "loom":
+                relevant = {"Duration", "Growth speed", "Max radius"}
         for label_text, label, widget in self._stimulus_param_rows:
             visible = label_text in relevant
             label.setVisible(visible)
@@ -894,13 +1019,17 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
         self.primitive_mode_combo.setCurrentText(str(primitive.params.get("mode", self.project.grid_settings.movement_mode)))
         self.flicker_interval_spin.setValue(float(primitive.params.get("flicker_interval_sec", self.project.global_params.flicker_interval_sec)))
         self.flickering_check.setChecked(bool(primitive.params.get("flickering", False)))
+        self.bar_thickness_spin.setValue(float(primitive.params.get("bar_thickness_cm", 0.5)))
+        self.speed_spin.setValue(float(primitive.params.get("speed_cm_sec", self.project.global_params.speed_cm_sec)))
+        self.growth_speed_spin.setValue(float(primitive.params.get("growth_speed_cm_sec", 1.0)))
+        self.max_radius_spin.setValue(float(primitive.params.get("max_radius_cm", 3.0)))
         del blockers
 
     def _apply_stimulus_parameter_fields(self):
         primitive = self._selected_primitive()
         if primitive is None:
             return
-        if primitive.kind in {"static_hold", "flicker", "rocking", "rocking_lr"}:
+        if primitive.kind in {"static_hold", "flicker", "rocking", "rocking_lr", "whole_field_grating", "loom"}:
             primitive.params["duration_sec"] = self.duration_spin.value()
         if primitive.kind in {"rocking", "rocking_lr", "point_path"}:
             primitive.params["movement_interval_ms"] = self.primitive_interval_spin.value()
@@ -910,6 +1039,12 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
             primitive.params["flicker_interval_sec"] = self.flicker_interval_spin.value()
         if primitive.kind in {"rocking", "rocking_lr"}:
             primitive.params["flickering"] = self.flickering_check.isChecked()
+        if primitive.kind == "whole_field_grating":
+            primitive.params["bar_thickness_cm"] = self.bar_thickness_spin.value()
+            primitive.params["speed_cm_sec"] = self.speed_spin.value()
+        if primitive.kind == "loom":
+            primitive.params["growth_speed_cm_sec"] = self.growth_speed_spin.value()
+            primitive.params["max_radius_cm"] = self.max_radius_spin.value()
         self._load_primitive_editor(self.primitive_list.currentRow())
         self._refresh_preview()
 

@@ -24,5 +24,8 @@ Purpose: record canonical shapes, files, and artifact ownership used across work
 
 - Trajectory files use `*_trajectory.csv`.
 - Dot position columns are named `<dot>_x` and `<dot>_y`; radius/visibility columns use `<dot>_radius` where applicable.
+- GUI-generated visual primitives can add non-dot columns while preserving dot columns:
+  - Whole-field gratings use `grating_active`, `grating_x`, `grating_y`, `grating_direction_deg`, `grating_bar_thickness_cm`, `grating_speed_cm_sec`, and `grating_phase_cm`.
+  - Loom stimuli use `loom_active`, `loom_x`, `loom_y`, `loom_radius`, `loom_growth_speed_cm_sec`, and `loom_max_radius_cm`.
 - Projection consumes generated trajectory CSVs and writes `stimulus_timing_log.csv` with stimulus file, start/end unix time, and duration seconds.
 - `parameters/experiment_parameters.csv` is generator-owned metadata and should stay compatible with existing notebooks/scripts.

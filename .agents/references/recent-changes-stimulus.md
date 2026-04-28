@@ -17,6 +17,16 @@ Append meaningful handoffs using this template.
 ## 2026-04-28
 
 - Date: 2026-04-28
+- Short label: Stimulus designer grating and loom primitives
+- Slice goal: Add whole-field grating and loom primitives to the point-grid GUI while keeping dot trajectory exports compatible.
+- Passes completed: Added generator rows for grating/loom visual channels, GUI primitive defaults and point placement, preview drawing, PsychoPy playback support, active-column timing extraction, and focused tests.
+- What changed: `src/stimulus_designer.py` now defaults static periods to 10 s and emits `grating_*`/`loom_*` columns for the new primitives. `scripts/stimuli/stimulus_designer_app.py` adds the primitives, parameter fields, grid interactions, a rotated fish icon with eyes, and preview rendering. `scripts/stimuli/try_projection.py` draws gratings/looms and restricts dot detection to `dotN_*` columns. `src/stimuli_timeline.py` recognizes `*_active` visual onset columns.
+- What remains broken: PsychoPy rendering still needs a manual projector smoke test in the real display environment.
+- Remaining in-slice work: Confirm grating orientation and perceived motion direction on the stimulus display.
+- Next likely breakpoint: PsychoPy `GratingStim` orientation conventions may need a sign/90-degree adjustment after visual inspection.
+- Rerun implications: Run `python -m pytest tests/test_stimulus_designer.py tests/test_stimulus_designer_app.py -q`; GUI tests skip where PyQt6 is unavailable.
+
+- Date: 2026-04-28
 - Short label: Stimulus designer point-grid primitive editor
 - Slice goal: Make GUI primitive authoring point-grid based and remove redundant primitive choices from new GUI workflows.
 - Passes completed: Added blank-stimulus defaults, selected-primitive grid clicks, dynamic per-primitive parameter fields, and empty-export validation.

@@ -74,7 +74,7 @@ def test_stimulus_designer_add_menu_hides_redundant_primitives(qt_app):
     window = StimulusDesignerWindow()
     try:
         kinds = [window.kind_combo.itemText(i) for i in range(window.kind_combo.count())]
-        assert kinds == ["static_hold", "flicker", "rocking", "rocking_lr", "point_path"]
+        assert kinds == ["static_hold", "flicker", "rocking", "rocking_lr", "point_path", "whole_field_grating", "loom"]
         assert "arc" not in kinds
         assert "continuous_arc" not in kinds
         assert "waypoint_move" not in kinds
@@ -117,6 +117,40 @@ def test_stimulus_designer_grid_click_places_static_hold(qt_app):
         assert primitive.kind == "static_hold"
         assert primitive.params["point"]["ring_index"] == 0
         assert primitive.params["point"]["point_index"] == 1
+        assert primitive.params["duration_sec"] == pytest.approx(10.0)
+    finally:
+        window.close()
+
+
+def test_stimulus_designer_grid_click_sets_grating_arrow(qt_app):
+    window = StimulusDesignerWindow()
+    try:
+        window.kind_combo.setCurrentText("whole_field_grating")
+        window._add_primitive()
+
+        window._toggle_grid_point(0, 1)
+        window._toggle_grid_point(0, 2)
+
+        primitive = window.project.stimuli[0].primitives[0]
+        points = primitive.params["points"]
+        assert primitive.kind == "whole_field_grating"
+        assert [(p["ring_index"], p["point_index"]) for p in points] == [(0, 1), (0, 2)]
+    finally:
+        window.close()
+
+
+def test_stimulus_designer_grid_click_sets_loom_center(qt_app):
+    window = StimulusDesignerWindow()
+    try:
+        window.kind_combo.setCurrentText("loom")
+        window._add_primitive()
+
+        window._toggle_grid_point(0, 3)
+
+        primitive = window.project.stimuli[0].primitives[0]
+        assert primitive.kind == "loom"
+        assert primitive.params["point"]["ring_index"] == 0
+        assert primitive.params["point"]["point_index"] == 3
     finally:
         window.close()
 
@@ -278,5 +312,19 @@ def test_stimulus_designer_parameter_fields_follow_selected_primitive(qt_app):
         assert window.duration_spin.isHidden()
         assert not window.primitive_interval_spin.isHidden()
         assert not window.primitive_mode_combo.isHidden()
+
+        window.kind_combo.setCurrentText("whole_field_grating")
+        window._add_primitive()
+        assert not window.duration_spin.isHidden()
+        assert not window.bar_thickness_spin.isHidden()
+        assert not window.speed_spin.isHidden()
+        assert window.primitive_interval_spin.isHidden()
+
+        window.kind_combo.setCurrentText("loom")
+        window._add_primitive()
+        assert not window.duration_spin.isHidden()
+        assert not window.growth_speed_spin.isHidden()
+        assert not window.max_radius_spin.isHidden()
+        assert window.flicker_interval_spin.isHidden()
     finally:
         window.close()

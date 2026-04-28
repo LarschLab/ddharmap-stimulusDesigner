@@ -18,6 +18,7 @@ def get_motion_timing_simple(
     It can look at:
       - x/y columns:   *_x, *_y  (include_xy=True)
       - radius columns: *_radius (include_radius=True)
+      - active columns: *_active, for non-dot visual primitives
 
     Returns a dict with fields compatible with your downstream code.
     """
@@ -32,6 +33,7 @@ def get_motion_timing_simple(
         cols += [c for c in df.columns if c.endswith(("_x", "_y"))]
     if include_radius:
         cols += [c for c in df.columns if c.endswith("_radius")]
+    cols += [c for c in df.columns if c.endswith("_active")]
 
     # Remove duplicates while preserving order
     cols = list(dict.fromkeys(cols))
@@ -47,8 +49,12 @@ def get_motion_timing_simple(
         if np.all(pd.isna(s)):
             continue
 
-        # first index where value differs from initial value
-        diff_from_init = (s != s[0])
+        # active columns mark visual primitive onset directly; other columns
+        # preserve the legacy "differs from initial value" behavior.
+        if c.endswith("_active"):
+            diff_from_init = s != 0
+        else:
+            diff_from_init = s != s[0]
         if np.any(diff_from_init):
             start_candidates.append(int(np.argmax(diff_from_init)))
 
