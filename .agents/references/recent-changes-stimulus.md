@@ -17,6 +17,16 @@ Append meaningful handoffs using this template.
 ## 2026-04-28
 
 - Date: 2026-04-28
+- Short label: Stimulus designer point-grid primitive editor
+- Slice goal: Make GUI primitive authoring point-grid based and remove redundant primitive choices from new GUI workflows.
+- Passes completed: Added blank-stimulus defaults, selected-primitive grid clicks, dynamic per-primitive parameter fields, and empty-export validation.
+- What changed: `src/stimulus_designer.py` now supports grid-point params for static hold, flicker, rocking, and rocking_lr, returns empty dataframes for blank stimuli, and rejects empty exports. `scripts/stimuli/stimulus_designer_app.py` hides arc/continuous_arc/waypoint_move from the add menu, stops auto-creating point_path on grid clicks, moves Interval/Mode into `Stimulus parameters`, and starts added stimuli without a default static hold.
+- What remains broken: GUI tests still skip where PyQt6 is unavailable.
+- Remaining in-slice work: Manual GUI smoke test in a PyQt6 environment to confirm parameter visibility and click placement feel right.
+- Next likely breakpoint: Old saved projects can still contain legacy arc/continuous_arc/waypoint_move primitives; they remain supported by backend generation but do not have structured GUI parameter rows.
+- Rerun implications: Run `python -m pytest tests/test_stimulus_designer.py tests/test_stimulus_designer_app.py -q`; install/activate PyQt6 to exercise GUI tests instead of skip behavior.
+
+- Date: 2026-04-28
 - Short label: Stimulus designer point grid defaults
 - Slice goal: Update the GUI's startup point-grid defaults for custom path design.
 - Passes completed: Changed `GridSettings` defaults and added a focused owner-module test for the startup values.

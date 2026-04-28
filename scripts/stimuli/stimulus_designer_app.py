@@ -70,9 +70,15 @@ class PreviewCanvas(QtWidgets.QWidget):
     def _selected_grid_points(self) -> list[tuple[int, int]]:
         selected: list[tuple[int, int]] = []
         for primitive in self.stimulus.primitives:
-            if primitive.kind != "point_path":
+            if primitive.kind in {"static_hold", "flicker"}:
+                points = [primitive.params.get("point")]
+            elif primitive.kind in {"rocking", "rocking_lr", "point_path"}:
+                points = primitive.params.get("points", [])
+            else:
                 continue
-            for point in primitive.params.get("points", []):
+            for point in points:
+                if not isinstance(point, dict):
+                    continue
                 if "ring_index" in point and "point_index" in point:
                     selected.append((int(point["ring_index"]), int(point["point_index"])))
         return selected
@@ -352,7 +358,7 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
         right.addWidget(self.primitive_list)
         primitive_buttons = QtWidgets.QHBoxLayout()
         self.kind_combo = QtWidgets.QComboBox()
-        self.kind_combo.addItems(["static_hold", "arc", "continuous_arc", "flicker", "rocking", "rocking_lr", "waypoint_move", "point_path"])
+        self.kind_combo.addItems(["static_hold", "flicker", "rocking", "rocking_lr", "point_path"])
         add_prim_btn = QtWidgets.QPushButton("Add")
         add_prim_btn.clicked.connect(self._add_primitive)
         del_prim_btn = QtWidgets.QPushButton("Delete")
@@ -373,6 +379,50 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
         self._register_description(apply_primitive_btn, "Apply the primitive JSON editor contents to the selected primitive.")
         right.addWidget(self.primitive_json)
         right.addWidget(apply_primitive_btn)
+
+        self.stimulus_params_group = QtWidgets.QGroupBox("Stimulus parameters")
+        stimulus_params_form = QtWidgets.QFormLayout(self.stimulus_params_group)
+        self.duration_spin = QtWidgets.QDoubleSpinBox()
+        self.duration_spin.setRange(0.001, 10000)
+        self.duration_spin.setSuffix(" s")
+        self.duration_spin.setDecimals(3)
+        self.primitive_interval_spin = QtWidgets.QDoubleSpinBox()
+        self.primitive_interval_spin.setRange(1, 10000)
+        self.primitive_interval_spin.setSuffix(" ms")
+        self.primitive_interval_spin.setDecimals(1)
+        self.primitive_mode_combo = QtWidgets.QComboBox()
+        self.primitive_mode_combo.addItems(["bout", "continuous"])
+        self.flicker_interval_spin = QtWidgets.QDoubleSpinBox()
+        self.flicker_interval_spin.setRange(0.001, 1000)
+        self.flicker_interval_spin.setSuffix(" s")
+        self.flicker_interval_spin.setDecimals(3)
+        self.flickering_check = QtWidgets.QCheckBox()
+        self._stimulus_param_rows = []
+        for label_text, widget in [
+            ("Duration", self.duration_spin),
+            ("Interval", self.primitive_interval_spin),
+            ("Mode", self.primitive_mode_combo),
+            ("Flicker interval", self.flicker_interval_spin),
+            ("Flickering", self.flickering_check),
+        ]:
+            label = QtWidgets.QLabel(label_text)
+            stimulus_params_form.addRow(label, widget)
+            self._stimulus_param_rows.append((label_text, label, widget))
+        for widget in [
+            self.duration_spin,
+            self.primitive_interval_spin,
+            self.flicker_interval_spin,
+        ]:
+            widget.valueChanged.connect(self._apply_stimulus_parameter_fields)
+        self.primitive_mode_combo.currentTextChanged.connect(self._apply_stimulus_parameter_fields)
+        self.flickering_check.stateChanged.connect(self._apply_stimulus_parameter_fields)
+        self._register_description(self.duration_spin, "Duration for the selected primitive.")
+        self._register_description(self.primitive_interval_spin, "Time between point changes for the selected primitive.")
+        self._register_description(self.primitive_mode_combo, "Bout jumps point-to-point; continuous interpolates between points.")
+        self._register_description(self.flicker_interval_spin, "Flicker on/off interval for the selected primitive.")
+        self._register_description(self.flickering_check, "Apply flickering while the selected primitive is active.")
+        self.stimulus_params_group.setSizePolicy(QtWidgets.QSizePolicy.Policy.Preferred, QtWidgets.QSizePolicy.Policy.Fixed)
+        right.addWidget(self.stimulus_params_group)
 
         self.params_group = QtWidgets.QGroupBox("Global / calibration")
         params_form = QtWidgets.QFormLayout(self.params_group)
@@ -414,35 +464,21 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
         self.grid_spacing_spin.setSingleStep(0.1)
         self.grid_points_spin = QtWidgets.QSpinBox()
         self.grid_points_spin.setRange(4, 96)
-        self.interval_spin = QtWidgets.QDoubleSpinBox()
-        self.interval_spin.setRange(1, 10000)
-        self.interval_spin.setSuffix(" ms")
-        self.mode_combo = QtWidgets.QComboBox()
-        self.mode_combo.addItems(["bout", "continuous"])
         for widget in [
             self.grid_rings_spin,
             self.grid_first_radius_spin,
             self.grid_spacing_spin,
             self.grid_points_spin,
-            self.interval_spin,
-            self.mode_combo,
         ]:
-            if isinstance(widget, QtWidgets.QComboBox):
-                widget.currentTextChanged.connect(self._apply_grid_fields)
-            else:
-                widget.valueChanged.connect(self._apply_grid_fields)
+            widget.valueChanged.connect(self._apply_grid_fields)
         self._register_description(self.grid_rings_spin, "Number of concentric placement rings around the fish.")
         self._register_description(self.grid_first_radius_spin, "Distance from fish center to the first placement ring in centimeters.")
         self._register_description(self.grid_spacing_spin, "Distance between neighboring placement rings in centimeters.")
         self._register_description(self.grid_points_spin, "Number of clickable positions on each ring.")
-        self._register_description(self.interval_spin, "Time between point changes for clicked point paths.")
-        self._register_description(self.mode_combo, "Bout jumps point-to-point; continuous interpolates between points.")
         grid_form.addRow("Rings", self.grid_rings_spin)
         grid_form.addRow("First ring cm", self.grid_first_radius_spin)
         grid_form.addRow("Ring spacing cm", self.grid_spacing_spin)
         grid_form.addRow("Points / ring", self.grid_points_spin)
-        grid_form.addRow("Interval", self.interval_spin)
-        grid_form.addRow("Mode", self.mode_combo)
         self.grid_group.setSizePolicy(QtWidgets.QSizePolicy.Policy.Preferred, QtWidgets.QSizePolicy.Policy.Fixed)
         self.grid_group.setMinimumHeight(self.grid_group.sizeHint().height())
         right.addWidget(self.grid_group)
@@ -640,8 +676,11 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
                 self.grid_first_radius_spin,
                 self.grid_spacing_spin,
                 self.grid_points_spin,
-                self.interval_spin,
-                self.mode_combo,
+                self.duration_spin,
+                self.primitive_interval_spin,
+                self.primitive_mode_combo,
+                self.flicker_interval_spin,
+                self.flickering_check,
             ]
         ]
         self.key_edit.setText(stim.key)
@@ -661,8 +700,7 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
         self.grid_first_radius_spin.setValue(grid.first_ring_radius_cm)
         self.grid_spacing_spin.setValue(grid.ring_spacing_cm)
         self.grid_points_spin.setValue(grid.points_per_ring)
-        self.interval_spin.setValue(grid.movement_interval_ms)
-        self.mode_combo.setCurrentText(grid.movement_mode)
+        self._load_stimulus_parameter_fields()
         del blockers
 
     def _refresh_preview(self):
@@ -698,17 +736,11 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
         self.project.grid_settings.first_ring_radius_cm = self.grid_first_radius_spin.value()
         self.project.grid_settings.ring_spacing_cm = self.grid_spacing_spin.value()
         self.project.grid_settings.points_per_ring = self.grid_points_spin.value()
-        self.project.grid_settings.movement_interval_ms = self.interval_spin.value()
-        self.project.grid_settings.movement_mode = self.mode_combo.currentText()
-        primitive = self._current_point_path_primitive(create=False)
-        if primitive is not None:
-            primitive.params["movement_interval_ms"] = self.project.grid_settings.movement_interval_ms
-            primitive.params["mode"] = self.project.grid_settings.movement_mode
         self._refresh_preview()
 
     def _add_stimulus(self):
         idx = len(self.project.stimuli) + 1
-        self.project.stimuli.append(StimulusSpec(key=f"Stimulus_{idx}", name=f"Stimulus {idx}", primitives=[Primitive("static_hold", {"duration_sec": 1.0})]))
+        self.project.stimuli.append(StimulusSpec(key=f"Stimulus_{idx}", name=f"Stimulus {idx}", primitives=[]))
         self._refresh_all()
         self.stimulus_list.setCurrentRow(len(self.project.stimuli) - 1)
 
@@ -744,13 +776,10 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
 
     def _default_primitive_params(self, kind: str) -> dict:
         defaults = {
-            "static_hold": {"duration_sec": 1.0, "angle_deg": -30.0},
-            "arc": {"angle_range": [-30.0, -160.0], "continuous": False, "flickering": False},
-            "continuous_arc": {"angle_range": [-30.0, -160.0], "flickering": False},
-            "flicker": {"angle_range": [-30.0, -160.0], "angle_index": 10, "duration_sec": 3.0},
-            "rocking": {"angle_range": [-30.0, -163.0], "rocking_idx_pair": [11, 13], "flickering": False},
-            "rocking_lr": {"left_angle_range": [-30.0, -163.0], "right_angle_range": [30.0, 163.0], "rocking_lr_indices": [11, 13], "flickering": False},
-            "waypoint_move": {"x_cm": 0.0, "y_cm": 1.0, "duration_sec": 1.0},
+            "static_hold": {"duration_sec": 1.0},
+            "flicker": {"duration_sec": 3.0, "flicker_interval_sec": self.project.global_params.flicker_interval_sec},
+            "rocking": {"points": [], "duration_sec": 1.0, "movement_interval_ms": self.project.grid_settings.movement_interval_ms, "flickering": False},
+            "rocking_lr": {"points": [], "duration_sec": 1.0, "movement_interval_ms": self.project.grid_settings.movement_interval_ms, "flickering": False},
             "point_path": {
                 "points": [],
                 "movement_interval_ms": self.project.grid_settings.movement_interval_ms,
@@ -769,45 +798,52 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
         self.primitive_list.setCurrentRow(len(stim.primitives) - 1)
         self._refresh_preview()
 
-    def _current_point_path_primitive(self, create: bool) -> Primitive | None:
+    def _selected_primitive(self) -> Primitive | None:
         stim = self._current_stimulus()
         if not stim:
             return None
         row = self.primitive_list.currentRow()
-        if row >= 0 and row < len(stim.primitives) and stim.primitives[row].kind == "point_path":
-            return stim.primitives[row]
-        for primitive in reversed(stim.primitives):
-            if primitive.kind == "point_path":
-                return primitive
-        if not create:
+        if row < 0 or row >= len(stim.primitives):
             return None
-        primitive = Primitive("point_path", self._default_primitive_params("point_path"))
-        stim.primitives.append(primitive)
-        self._refresh_fields()
-        self.primitive_list.setCurrentRow(len(stim.primitives) - 1)
-        return primitive
+        return stim.primitives[row]
 
     def _toggle_grid_point(self, ring_index: int, point_index: int):
-        primitive = self._current_point_path_primitive(create=True)
+        primitive = self._selected_primitive()
         if primitive is None:
             return
-        points = list(primitive.params.get("points", []))
-        keep = []
-        removed = False
-        for point in points:
-            if int(point.get("ring_index", -1)) == ring_index and int(point.get("point_index", -1)) == point_index:
-                removed = True
-            else:
-                keep.append(point)
-        if removed:
-            primitive.params["points"] = keep
+        point = make_grid_point(ring_index, point_index, self.project.grid_settings, self.project.global_params)
+        if primitive.kind in {"static_hold", "flicker"}:
+            primitive.params["point"] = point
+        elif primitive.kind in {"rocking", "rocking_lr"}:
+            primitive.params["points"] = self._toggle_limited_point_list(primitive.params.get("points", []), point, limit=2)
+        elif primitive.kind == "point_path":
+            primitive.params["points"] = self._toggle_limited_point_list(primitive.params.get("points", []), point, limit=None)
+            primitive.params["movement_interval_ms"] = primitive.params.get("movement_interval_ms", self.project.grid_settings.movement_interval_ms)
+            primitive.params["mode"] = primitive.params.get("mode", self.project.grid_settings.movement_mode)
         else:
-            keep.append(make_grid_point(ring_index, point_index, self.project.grid_settings, self.project.global_params))
-            primitive.params["points"] = keep
-        primitive.params["movement_interval_ms"] = self.project.grid_settings.movement_interval_ms
-        primitive.params["mode"] = self.project.grid_settings.movement_mode
+            return
         self._load_primitive_editor(self.primitive_list.currentRow())
         self._refresh_preview()
+
+    def _toggle_limited_point_list(self, points, point: dict, limit: int | None) -> list[dict]:
+        current = [existing for existing in points if isinstance(existing, dict)]
+        keep = []
+        removed = False
+        for existing in current:
+            if (
+                int(existing.get("ring_index", -1)) == int(point["ring_index"])
+                and int(existing.get("point_index", -1)) == int(point["point_index"])
+            ):
+                removed = True
+            else:
+                keep.append(existing)
+        if removed:
+            return keep
+        if limit is not None and len(keep) >= limit:
+            keep[-1] = point
+            return keep
+        keep.append(point)
+        return keep
 
     def _delete_primitive(self):
         stim = self._current_stimulus()
@@ -822,9 +858,60 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
         stim = self._current_stimulus()
         if not stim or row < 0 or row >= len(stim.primitives):
             self.primitive_json.clear()
+            self._load_stimulus_parameter_fields()
             return
         primitive = stim.primitives[row]
         self.primitive_json.setPlainText(json.dumps({"kind": primitive.kind, "params": primitive.params}, indent=2))
+        self._load_stimulus_parameter_fields()
+
+    def _load_stimulus_parameter_fields(self) -> None:
+        primitive = self._selected_primitive()
+        relevant = set()
+        if primitive is None:
+            self.stimulus_params_group.setVisible(False)
+        else:
+            self.stimulus_params_group.setVisible(True)
+            if primitive.kind == "static_hold":
+                relevant = {"Duration"}
+            elif primitive.kind == "flicker":
+                relevant = {"Duration", "Flicker interval"}
+            elif primitive.kind in {"rocking", "rocking_lr"}:
+                relevant = {"Duration", "Interval", "Flickering"}
+            elif primitive.kind == "point_path":
+                relevant = {"Interval", "Mode"}
+        for label_text, label, widget in self._stimulus_param_rows:
+            visible = label_text in relevant
+            label.setVisible(visible)
+            widget.setVisible(visible)
+        if primitive is None:
+            return
+        blockers = [
+            QtCore.QSignalBlocker(widget)
+            for _, _, widget in self._stimulus_param_rows
+        ]
+        self.duration_spin.setValue(float(primitive.params.get("duration_sec", 1.0)))
+        self.primitive_interval_spin.setValue(float(primitive.params.get("movement_interval_ms", self.project.grid_settings.movement_interval_ms)))
+        self.primitive_mode_combo.setCurrentText(str(primitive.params.get("mode", self.project.grid_settings.movement_mode)))
+        self.flicker_interval_spin.setValue(float(primitive.params.get("flicker_interval_sec", self.project.global_params.flicker_interval_sec)))
+        self.flickering_check.setChecked(bool(primitive.params.get("flickering", False)))
+        del blockers
+
+    def _apply_stimulus_parameter_fields(self):
+        primitive = self._selected_primitive()
+        if primitive is None:
+            return
+        if primitive.kind in {"static_hold", "flicker", "rocking", "rocking_lr"}:
+            primitive.params["duration_sec"] = self.duration_spin.value()
+        if primitive.kind in {"rocking", "rocking_lr", "point_path"}:
+            primitive.params["movement_interval_ms"] = self.primitive_interval_spin.value()
+        if primitive.kind == "point_path":
+            primitive.params["mode"] = self.primitive_mode_combo.currentText()
+        if primitive.kind == "flicker":
+            primitive.params["flicker_interval_sec"] = self.flicker_interval_spin.value()
+        if primitive.kind in {"rocking", "rocking_lr"}:
+            primitive.params["flickering"] = self.flickering_check.isChecked()
+        self._load_primitive_editor(self.primitive_list.currentRow())
+        self._refresh_preview()
 
     def _apply_primitive_json(self):
         stim = self._current_stimulus()
@@ -867,7 +954,11 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
     def _export_csvs(self):
         path = QtWidgets.QFileDialog.getExistingDirectory(self, "Export trajectory CSVs")
         if path:
-            written = export_project(self.project, path)
+            try:
+                written = export_project(self.project, path)
+            except ValueError as exc:
+                QtWidgets.QMessageBox.warning(self, "Export failed", str(exc))
+                return
             self.current_output_dir = Path(path)
             QtWidgets.QMessageBox.information(self, "Export complete", f"Wrote {len(written)} trajectory CSV files.")
 

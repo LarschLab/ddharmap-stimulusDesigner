@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
 from src.stimulus_designer import (
     Calibration,
@@ -27,11 +28,26 @@ def test_calibration_converts_px_and_cm():
 
 
 def test_arc_generation_uses_canonical_columns():
-    project = default_project()
-    df = generate_stimulus_dataframe(project.stimuli[0], project.global_params)
+    spec = StimulusSpec(
+        key="Arc",
+        primitives=[
+            Primitive("static_hold", {"duration_sec": 1.0, "angle_deg": -30.0}),
+            Primitive("arc", {"angle_range": [-30.0, -160.0], "continuous": False}),
+        ],
+    )
+    df = generate_stimulus_dataframe(spec)
     assert list(df.columns) == ["dot0_x", "dot0_y", "dot0_radius"]
     assert len(df) > 0
-    assert df["dot0_radius"].max() == project.global_params.dot_size_cm
+    assert df["dot0_radius"].max() > 0
+
+
+def test_default_project_starts_with_blank_stimulus():
+    project = default_project()
+    assert len(project.stimuli) == 1
+    assert project.stimuli[0].primitives == []
+    df = generate_stimulus_dataframe(project.stimuli[0], project.global_params)
+    assert list(df.columns) == ["dot0_x", "dot0_y", "dot0_radius"]
+    assert df.empty
 
 
 def test_flicker_generation_toggles_radius():
@@ -41,6 +57,49 @@ def test_flicker_generation_toggles_radius():
     )
     df = generate_stimulus_dataframe(spec)
     assert 0.0 in set(df["dot0_radius"])
+
+
+def test_static_hold_uses_grid_point_position():
+    grid = GridSettings(points_per_ring=4)
+    point = make_grid_point(0, 1, grid)
+    spec = StimulusSpec(
+        key="Hold",
+        primitives=[Primitive("static_hold", {"point": point, "duration_sec": 0.5})],
+    )
+    df = generate_stimulus_dataframe(spec)
+    assert len(df) == 30
+    assert df.iloc[0]["dot0_x"] == point["x_cm"]
+    assert df.iloc[0]["dot0_y"] == point["y_cm"]
+
+
+def test_flicker_uses_grid_point_position_and_primitive_interval():
+    grid = GridSettings(points_per_ring=4)
+    point = make_grid_point(0, 1, grid)
+    spec = StimulusSpec(
+        key="FlickPoint",
+        primitives=[Primitive("flicker", {"point": point, "duration_sec": 0.2, "flicker_interval_sec": 0.05})],
+    )
+    df = generate_stimulus_dataframe(spec)
+    assert df.iloc[0]["dot0_x"] == point["x_cm"]
+    assert 0.0 in set(df["dot0_radius"])
+
+
+def test_rocking_uses_two_grid_points_and_duration():
+    grid = GridSettings(points_per_ring=4)
+    p1 = make_grid_point(0, 0, grid)
+    p2 = make_grid_point(0, 1, grid)
+    spec = StimulusSpec(
+        key="Rock",
+        primitives=[
+            Primitive(
+                "rocking",
+                {"points": [p1, p2], "duration_sec": 0.5, "movement_interval_ms": 100},
+            )
+        ],
+    )
+    df = generate_stimulus_dataframe(spec)
+    assert len(df) == 30
+    assert set(df["dot0_x"]) == {p1["x_cm"], p2["x_cm"]}
 
 
 def test_point_path_bout_holds_each_clicked_point():
@@ -116,7 +175,15 @@ def test_project_from_dict_loads_legacy_without_grid_settings():
 
 
 def test_export_project_writes_contract_files(tmp_path):
-    project = default_project()
+    project = StimulusProject(
+        stimuli=[
+            StimulusSpec(
+                key="LeB",
+                name="left bout",
+                primitives=[Primitive("static_hold", {"duration_sec": 1.0, "angle_deg": -30.0})],
+            )
+        ]
+    )
     written = export_project(project, tmp_path)
     assert written == [tmp_path / "LeB_trajectory.csv"]
     assert (tmp_path / "parameters" / "experiment_parameters.csv").exists()
@@ -124,6 +191,12 @@ def test_export_project_writes_contract_files(tmp_path):
     assert (tmp_path / "parameters" / "stimulus_designer_project.json").exists()
     df = pd.read_csv(written[0])
     assert {"dot0_x", "dot0_y", "dot0_radius"}.issubset(df.columns)
+
+
+def test_export_project_rejects_empty_stimuli(tmp_path):
+    project = default_project()
+    with pytest.raises(ValueError, match="has no primitives"):
+        export_project(project, tmp_path)
 
 
 def test_import_legacy_config_maps_known_shapes(tmp_path):
