@@ -17,6 +17,36 @@ Append meaningful handoffs using this template.
 ## 2026-04-28
 
 - Date: 2026-04-28
+- Short label: Stimulus designer right-drag preview pan
+- Slice goal: Let users navigate a zoomed preview field without changing stimulus coordinates or left-click point selection.
+- Passes completed: Added right-button pan state, pan clamping through the existing calibrated screen bounds, cursor feedback, tooltip text, and focused GUI tests.
+- What changed: `scripts/stimuli/stimulus_designer_app.py` now supports right-click drag panning in `PreviewCanvas`; left click remains point selection and full-screen zoom remains centered.
+- What remains broken: PyQt GUI tests still skip where PyQt6 is unavailable; manual GUI check is needed for drag feel and cursor behavior.
+- Remaining in-slice work: Confirm right-drag pan feels natural with the actual mouse/trackpad setup.
+- Next likely breakpoint: Drag direction may need inversion if users expect map-style panning instead of viewport-center panning.
+- Rerun implications: Run `python -m pytest tests/test_stimulus_designer.py tests/test_stimulus_designer_app.py -q` in an environment with PyQt6 to exercise GUI tests.
+
+- Date: 2026-04-28
+- Short label: Stimulus designer preview transform and live durations
+- Slice goal: Keep zoomed preview guide geometry aligned, make actual stimulus dots translucent, and update primitive duration rows immediately after parameter edits.
+- Passes completed: Switched fish/ring/field guide origins to the transformed fish origin, changed preview stimulus dot color to 40% alpha, added live timeline row refresh, and added focused GUI tests.
+- What changed: `scripts/stimuli/stimulus_designer_app.py` now keeps fish, concentric rings, binocular field, blind spot, grid, and stimulus preview in one zoomed coordinate system. Timeline duration/end rows refresh after primitive parameter edits, grid point changes, and global timing changes.
+- What remains broken: PyQt GUI tests still skip where PyQt6 is unavailable; manual visual check is needed for the zoomed preview alignment.
+- Remaining in-slice work: Confirm in the GUI that fish/field overlays remain visually locked to grid points while wheel zooming.
+- Next likely breakpoint: If selected grid dots still feel visually heavy on top of the intended start point, reduce their radius rather than their opacity.
+- Rerun implications: Run `python -m pytest tests/test_stimulus_designer.py tests/test_stimulus_designer_app.py -q` in an environment with PyQt6 to exercise the GUI tests.
+
+- Date: 2026-04-28
+- Short label: Stimulus designer calibration summary and preview zoom
+- Slice goal: Make screen calibration read-only in the GUI and support precise point selection by zooming the preview around the cursor.
+- Passes completed: Removed editable screen dimension fields, added a calibration summary label, added cursor-centered preview-only wheel zoom with full-screen minimum zoom, and covered the behavior with focused GUI tests.
+- What changed: `scripts/stimuli/stimulus_designer_app.py` now shows calibrated screen dimensions and pixel scale as read-only text, while `PreviewCanvas` maintains its own zoom/view center independent of whole-app keyboard zoom.
+- What remains broken: Manual PyQt visual check still needed for mouse-wheel feel on the real GUI.
+- Remaining in-slice work: Confirm cursor-centered wheel zoom is comfortable for selecting dense grid points on the actual display/workstation.
+- Next likely breakpoint: Trackpad wheel deltas may feel too sensitive or too slow; adjust `PREVIEW_ZOOM_STEP` if manual use suggests it.
+- Rerun implications: Run `python -m pytest tests/test_stimulus_designer.py tests/test_stimulus_designer_app.py -q`.
+
+- Date: 2026-04-28
 - Short label: Stimulus designer calibrated screen preview
 - Slice goal: Match the GUI defaults to the measured projector calibration and show the full stimulus screen with fish-relative visual field guides.
 - Passes completed: Updated calibration defaults, exposed height calibration fields, fit preview scaling to the calibrated physical screen rectangle, clipped visual previews to the screen, and added binocular/blind-spot overlays.

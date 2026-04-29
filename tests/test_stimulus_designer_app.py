@@ -77,10 +77,13 @@ def test_stimulus_designer_gui_starts_with_projector_calibration(qt_app):
         assert window.project.calibration.screen_height_px == 800
         assert window.project.calibration.screen_width_mm == pytest.approx(152.0)
         assert window.project.calibration.screen_height_mm == pytest.approx(95.0)
-        assert window.px_width_spin.value() == 1280
-        assert window.px_height_spin.value() == 800
-        assert window.mm_width_spin.value() == pytest.approx(152.0)
-        assert window.mm_height_spin.value() == pytest.approx(95.0)
+        assert not hasattr(window, "px_width_spin")
+        assert not hasattr(window, "px_height_spin")
+        assert not hasattr(window, "mm_width_spin")
+        assert not hasattr(window, "mm_height_spin")
+        assert "1280 x 800 px" in window.calibration_summary_label.text()
+        assert "15.2 x 9.5 cm" in window.calibration_summary_label.text()
+        assert "0.11875 x 0.11875 mm/px" in window.calibration_summary_label.text()
     finally:
         window.close()
 
@@ -325,7 +328,7 @@ def test_stimulus_designer_right_panel_scrolls_and_groups_keep_rows(qt_app):
     try:
         assert isinstance(window.right_scroll, QtWidgets.QScrollArea)
         assert window.right_scroll.widget() is window.right_panel
-        assert window.params_group.layout().rowCount() == 6
+        assert window.params_group.layout().rowCount() == 3
         assert window.grid_group.layout().rowCount() == 4
         assert window.params_group.minimumHeight() >= window.params_group.sizeHint().height()
         assert window.grid_group.minimumHeight() >= window.grid_group.sizeHint().height()
@@ -399,14 +402,49 @@ def test_stimulus_designer_timeline_rows_include_durations(qt_app):
         window.close()
 
 
-def test_stimulus_designer_applies_height_calibration_fields(qt_app):
+def test_stimulus_designer_timeline_duration_updates_when_parameter_changes(qt_app):
     window = StimulusDesignerWindow()
     try:
-        window.mm_height_spin.setValue(100.0)
-        window.px_height_spin.setValue(900)
+        window.kind_combo.setCurrentText("static_hold")
+        window._add_primitive()
 
-        assert window.project.calibration.screen_height_mm == pytest.approx(100.0)
-        assert window.project.calibration.screen_height_px == 900
+        window.duration_spin.setValue(2.0)
+
+        assert "2.000 s" in window.primitive_list.item(0).text()
+        assert "end 2.000 s" in window.primitive_list.item(0).text()
+        assert "2.000 s total" in window.timeline_label.text()
+    finally:
+        window.close()
+
+
+def test_stimulus_designer_timeline_duration_updates_for_interval_changes(qt_app):
+    window = StimulusDesignerWindow()
+    try:
+        window.kind_combo.setCurrentText("point_path")
+        window._add_primitive()
+        window._toggle_grid_point(0, 1)
+        window._toggle_grid_point(0, 2)
+
+        window.primitive_interval_spin.setValue(100.0)
+
+        assert "0.200 s" in window.primitive_list.item(0).text()
+        assert "0.200 s total" in window.timeline_label.text()
+    finally:
+        window.close()
+
+
+def test_stimulus_designer_calibration_summary_updates_from_project(qt_app):
+    window = StimulusDesignerWindow()
+    try:
+        window.project.calibration.screen_width_px = 1000
+        window.project.calibration.screen_height_px = 500
+        window.project.calibration.screen_width_mm = 100.0
+        window.project.calibration.screen_height_mm = 50.0
+        window._refresh_fields()
+
+        assert "1000 x 500 px" in window.calibration_summary_label.text()
+        assert "10.0 x 5.0 cm" in window.calibration_summary_label.text()
+        assert "0.10000 x 0.10000 mm/px" in window.calibration_summary_label.text()
     finally:
         window.close()
 
@@ -443,3 +481,111 @@ def test_preview_canvas_visual_field_guides_use_requested_angles(qt_app, monkeyp
         painter.end()
 
     assert calls == [(-30.0, 30.0), (160.0, 200.0)]
+
+
+def test_preview_canvas_visual_field_origin_tracks_fish_origin_after_zoom(qt_app):
+    canvas = PreviewCanvas()
+    canvas.resize(560, 520)
+    canvas._set_preview_zoom(2.0, QtCore.QPointF(330.0, 230.0))
+
+    polygon = canvas._visual_field_polygon(-30.0, 30.0)
+
+    assert polygon[0] == canvas._to_widget(0.0, 0.0)
+    assert polygon[0] != QtCore.QPointF(canvas.width() / 2.0, canvas.height() / 2.0)
+
+
+def test_preview_canvas_stimulus_dot_color_is_translucent(qt_app):
+    canvas = PreviewCanvas()
+
+    assert canvas._stimulus_dot_color().alphaF() == pytest.approx(0.4)
+
+
+def test_preview_canvas_zoom_clamps_to_full_screen(qt_app):
+    canvas = PreviewCanvas()
+    canvas.resize(560, 520)
+
+    canvas._set_preview_zoom(0.1, QtCore.QPointF(200.0, 180.0))
+
+    assert canvas.preview_zoom == pytest.approx(1.0)
+    assert canvas.view_center_cm.x() == pytest.approx(0.0)
+    assert canvas.view_center_cm.y() == pytest.approx(0.0)
+
+
+def test_preview_canvas_zoom_preserves_cursor_coordinate(qt_app):
+    canvas = PreviewCanvas()
+    canvas.resize(560, 520)
+    anchor = QtCore.QPointF(330.0, 230.0)
+    before = canvas._widget_to_cm(anchor)
+
+    canvas._set_preview_zoom(2.0, anchor)
+    after = canvas._widget_to_cm(anchor)
+
+    assert canvas.preview_zoom == pytest.approx(2.0)
+    assert after.x() == pytest.approx(before.x())
+    assert after.y() == pytest.approx(before.y())
+
+
+def test_preview_canvas_grid_hit_testing_works_after_zoom(qt_app):
+    canvas = PreviewCanvas()
+    canvas.resize(560, 520)
+    canvas._set_preview_zoom(2.0, QtCore.QPointF(canvas.width() / 2.0, canvas.height() / 2.0))
+
+    ring_index, point_index, position = canvas._grid_point_positions()[0]
+
+    assert canvas._nearest_grid_point(position) == (ring_index, point_index)
+
+
+def test_preview_canvas_right_drag_pan_changes_view_center_when_zoomed(qt_app):
+    canvas = PreviewCanvas()
+    canvas.resize(560, 520)
+    canvas._set_preview_zoom(2.0, QtCore.QPointF(canvas.width() / 2.0, canvas.height() / 2.0))
+
+    canvas._pan_by_pixels(QtCore.QPointF(40.0, -20.0))
+
+    assert canvas.view_center_cm.x() < 0.0
+    assert canvas.view_center_cm.y() < 0.0
+
+
+def test_preview_canvas_pan_is_clamped_to_screen_bounds(qt_app):
+    canvas = PreviewCanvas()
+    canvas.resize(560, 520)
+    canvas._set_preview_zoom(8.0, QtCore.QPointF(canvas.width() / 2.0, canvas.height() / 2.0))
+
+    canvas._pan_by_pixels(QtCore.QPointF(-100000.0, 100000.0))
+
+    screen_width_cm, screen_height_cm = canvas._screen_size_cm()
+    viewport_width_cm = canvas.width() / canvas._scale()
+    viewport_height_cm = canvas.height() / canvas._scale()
+    assert canvas.view_center_cm.x() == pytest.approx((screen_width_cm - viewport_width_cm) / 2.0)
+    assert canvas.view_center_cm.y() == pytest.approx((screen_height_cm - viewport_height_cm) / 2.0)
+
+
+def test_preview_canvas_pan_at_full_screen_zoom_stays_centered(qt_app):
+    canvas = PreviewCanvas()
+    canvas.resize(560, 520)
+
+    canvas._pan_by_pixels(QtCore.QPointF(100.0, -100.0))
+
+    assert canvas.preview_zoom == pytest.approx(1.0)
+    assert canvas.view_center_cm.x() == pytest.approx(0.0)
+    assert canvas.view_center_cm.y() == pytest.approx(0.0)
+
+
+def test_preview_canvas_right_mouse_press_starts_pan_without_selecting(qt_app):
+    canvas = PreviewCanvas()
+    canvas.resize(560, 520)
+    emitted = []
+    canvas.grid_point_clicked.connect(lambda ring, point: emitted.append((ring, point)))
+    event = QtGui.QMouseEvent(
+        QtCore.QEvent.Type.MouseButtonPress,
+        QtCore.QPointF(canvas.width() / 2.0, canvas.height() / 2.0),
+        QtCore.Qt.MouseButton.RightButton,
+        QtCore.Qt.MouseButton.RightButton,
+        QtCore.Qt.KeyboardModifier.NoModifier,
+    )
+
+    canvas.mousePressEvent(event)
+
+    assert canvas.is_panning
+    assert event.isAccepted()
+    assert emitted == []
