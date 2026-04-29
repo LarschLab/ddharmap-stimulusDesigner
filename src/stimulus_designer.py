@@ -55,7 +55,7 @@ class GlobalStimulusParams:
 @dataclass
 class GridSettings:
     ring_count: int = 3
-    first_ring_radius_cm: float = 1.0
+    first_ring_radius_cm: float = 2.0
     ring_spacing_cm: float = 0.4
     points_per_ring: int = 12
     movement_interval_ms: float = 700.0
@@ -725,6 +725,22 @@ def export_project(project: StimulusProject, output_dir: str | Path) -> list[Pat
     return written
 
 
+def _mirror_point(point: dict[str, Any], params: GlobalStimulusParams) -> dict[str, Any]:
+    mirrored = dict(point)
+    if "angle_deg" in mirrored:
+        mirrored["angle_deg"] = -float(mirrored["angle_deg"])
+        if "points_per_ring" in mirrored:
+            points_per_ring = max(1, int(mirrored["points_per_ring"]))
+            mirrored["point_index"] = int(round(((float(mirrored["angle_deg"]) + 180.0) / 360.0) * points_per_ring)) % points_per_ring
+    if "radius_cm" in mirrored and "angle_deg" in mirrored:
+        x_cm, y_cm = grid_point_to_position(float(mirrored["radius_cm"]), float(mirrored["angle_deg"]), params)
+        mirrored["x_cm"] = x_cm
+        mirrored["y_cm"] = y_cm
+    elif "x_cm" in mirrored:
+        mirrored["x_cm"] = -float(mirrored["x_cm"])
+    return mirrored
+
+
 def mirror_stimulus_in_place(spec: StimulusSpec, params: GlobalStimulusParams | None = None) -> None:
     params = params or GlobalStimulusParams()
     for primitive in spec.primitives:
@@ -742,39 +758,13 @@ def mirror_stimulus_in_place(spec: StimulusSpec, params: GlobalStimulusParams | 
             p["right_angle_range"] = left
         if primitive.kind == "waypoint_move" and "x_cm" in p:
             p["x_cm"] = -float(p["x_cm"])
-        if primitive.kind in {"point_path", "whole_field_grating", "linear"}:
-            mirrored_points = []
-            for point in p.get("points", []):
-                mirrored = dict(point)
-                if "angle_deg" in mirrored:
-                    mirrored["angle_deg"] = -float(mirrored["angle_deg"])
-                    if "points_per_ring" in mirrored:
-                        points_per_ring = max(1, int(mirrored["points_per_ring"]))
-                        mirrored["point_index"] = int(round(((float(mirrored["angle_deg"]) + 180.0) / 360.0) * points_per_ring)) % points_per_ring
-                if "radius_cm" in mirrored and "angle_deg" in mirrored:
-                    x_cm, y_cm = grid_point_to_position(float(mirrored["radius_cm"]), float(mirrored["angle_deg"]), params)
-                    mirrored["x_cm"] = x_cm
-                    mirrored["y_cm"] = y_cm
-                elif "x_cm" in mirrored:
-                    mirrored["x_cm"] = -float(mirrored["x_cm"])
-                mirrored_points.append(mirrored)
-            p["points"] = mirrored_points
-        if primitive.kind == "loom":
-            point = p.get("point")
-            if isinstance(point, dict):
-                mirrored = dict(point)
-                if "angle_deg" in mirrored:
-                    mirrored["angle_deg"] = -float(mirrored["angle_deg"])
-                    if "points_per_ring" in mirrored:
-                        points_per_ring = max(1, int(mirrored["points_per_ring"]))
-                        mirrored["point_index"] = int(round(((float(mirrored["angle_deg"]) + 180.0) / 360.0) * points_per_ring)) % points_per_ring
-                if "radius_cm" in mirrored and "angle_deg" in mirrored:
-                    x_cm, y_cm = grid_point_to_position(float(mirrored["radius_cm"]), float(mirrored["angle_deg"]), params)
-                    mirrored["x_cm"] = x_cm
-                    mirrored["y_cm"] = y_cm
-                elif "x_cm" in mirrored:
-                    mirrored["x_cm"] = -float(mirrored["x_cm"])
-                p["point"] = mirrored
+        if isinstance(p.get("point"), dict):
+            p["point"] = _mirror_point(p["point"], params)
+        if isinstance(p.get("points"), list):
+            p["points"] = [
+                _mirror_point(point, params) if isinstance(point, dict) else point
+                for point in p["points"]
+            ]
 
 
 def launch_psychopy_projection(stimuli_dir: str | Path, script_path: str | Path | None = None) -> subprocess.Popen:
