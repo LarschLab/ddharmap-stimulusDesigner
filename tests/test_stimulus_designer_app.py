@@ -58,11 +58,11 @@ def test_stimulus_designer_scaled_view_keeps_content_usable(qt_app):
 def test_stimulus_designer_gui_starts_with_grid_defaults(qt_app):
     window = StimulusDesignerWindow()
     try:
-        assert window.project.grid_settings.first_ring_radius_cm == pytest.approx(1.0)
+        assert window.project.grid_settings.first_ring_radius_cm == pytest.approx(2.0)
         assert window.project.grid_settings.ring_spacing_cm == pytest.approx(0.4)
         assert window.project.grid_settings.points_per_ring == 12
         assert window.project.grid_settings.movement_interval_ms == pytest.approx(700.0)
-        assert window.grid_first_radius_spin.value() == pytest.approx(1.0)
+        assert window.grid_first_radius_spin.value() == pytest.approx(2.0)
         assert window.grid_spacing_spin.value() == pytest.approx(0.4)
         assert window.grid_points_spin.value() == 12
         assert window.project.grid_settings.movement_interval_ms == pytest.approx(700.0)
@@ -433,6 +433,25 @@ def test_stimulus_designer_timeline_duration_updates_for_interval_changes(qt_app
         window.close()
 
 
+def test_stimulus_designer_mirror_refreshes_point_primitive_editor_and_preview(qt_app):
+    window = StimulusDesignerWindow()
+    try:
+        window.kind_combo.setCurrentText("static_hold")
+        window._add_primitive()
+        window._toggle_grid_point(0, 1)
+        before = window.project.stimuli[0].primitives[0].params["point"]["angle_deg"]
+
+        window._mirror_stimulus()
+
+        primitive = window.project.stimuli[0].primitives[0]
+        assert primitive.params["point"]["angle_deg"] == pytest.approx(-before)
+        assert str(-before) in window.primitive_json.toPlainText()
+        assert "static_hold" in window.primitive_list.item(0).text()
+        assert window.canvas.stimulus is window.project.stimuli[0]
+    finally:
+        window.close()
+
+
 def test_stimulus_designer_calibration_summary_updates_from_project(qt_app):
     window = StimulusDesignerWindow()
     try:
@@ -498,6 +517,58 @@ def test_preview_canvas_stimulus_dot_color_is_translucent(qt_app):
     canvas = PreviewCanvas()
 
     assert canvas._stimulus_dot_color().alphaF() == pytest.approx(0.4)
+
+
+def test_preview_canvas_avoidance_circle_uses_18_mm_radius(qt_app):
+    canvas = PreviewCanvas()
+    calls = []
+
+    class FakePainter:
+        def __init__(self):
+            self.pen = None
+            self.brush = None
+
+        def setPen(self, pen):
+            self.pen = pen
+
+        def setBrush(self, brush):
+            self.brush = brush
+
+        def drawEllipse(self, center, radius_x, radius_y):
+            calls.append((center, radius_x, radius_y, self.pen.color(), self.brush.color()))
+
+    center = QtCore.QPointF(10.0, 20.0)
+    canvas._draw_avoidance_circle(FakePainter(), center, scale=30.0)
+
+    assert canvas.AVOIDANCE_RADIUS_CM == pytest.approx(1.8)
+    assert calls[0][:3] == (center, pytest.approx(54.0), pytest.approx(54.0))
+    assert calls[0][3] == QtGui.QColor("#b51f1f")
+    assert calls[0][4].red() > calls[0][4].green()
+    assert 0 < calls[0][4].alpha() < 255
+
+
+def test_preview_canvas_petri_dish_uses_10_cm_diameter(qt_app):
+    canvas = PreviewCanvas()
+    calls = []
+
+    class FakePainter:
+        def __init__(self):
+            self.brush = None
+
+        def setPen(self, pen):
+            pass
+
+        def setBrush(self, brush):
+            self.brush = brush
+
+        def drawEllipse(self, center, radius_x, radius_y):
+            calls.append((center, radius_x, radius_y, self.brush))
+
+    center = QtCore.QPointF(10.0, 20.0)
+    canvas._draw_petri_dish(FakePainter(), center, scale=30.0)
+
+    assert canvas.PETRI_DISH_RADIUS_CM == pytest.approx(5.0)
+    assert calls == [(center, pytest.approx(150.0), pytest.approx(150.0), QtCore.Qt.BrushStyle.NoBrush)]
 
 
 def test_preview_canvas_zoom_clamps_to_full_screen(qt_app):

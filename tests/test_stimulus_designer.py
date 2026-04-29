@@ -144,7 +144,7 @@ def test_point_path_continuous_interpolates_between_clicked_points():
 
 def test_grid_settings_defaults_match_gui_startup_values():
     grid = GridSettings()
-    assert grid.first_ring_radius_cm == 1.0
+    assert grid.first_ring_radius_cm == 2.0
     assert grid.ring_spacing_cm == 0.4
     assert grid.points_per_ring == 12
     assert grid.movement_interval_ms == 700.0
@@ -329,6 +329,41 @@ def test_mirror_stimulus_negates_angles_and_point_path_positions():
     assert mirrored_point["x_cm"] != point["x_cm"]
     mirrored_linear_point = spec.primitives[3].params["points"][0]
     assert mirrored_linear_point["angle_deg"] == -point["angle_deg"]
+
+
+def test_mirror_stimulus_mirrors_all_timeline_primitive_points_in_order():
+    grid = GridSettings(points_per_ring=8)
+    p1 = make_grid_point(0, 1, grid)
+    p2 = make_grid_point(0, 2, grid)
+    p3 = make_grid_point(0, 3, grid)
+    spec = StimulusSpec(
+        key="Mirror_All",
+        primitives=[
+            Primitive("static_hold", {"point": p1, "duration_sec": 1.0}),
+            Primitive("flicker", {"point": p2, "duration_sec": 1.0}),
+            Primitive("rocking", {"points": [p1, p2], "duration_sec": 1.0}),
+            Primitive("rocking_lr", {"points": [p2, p3], "duration_sec": 1.0}),
+            Primitive("point_path", {"points": [p1, p2, p3], "movement_interval_ms": 600, "mode": "bout"}),
+            Primitive("linear", {"points": [p1, p3], "movement_interval_ms": 600, "mode": "bout"}),
+            Primitive("whole_field_grating", {"points": [p1, p2], "duration_sec": 1.0}),
+            Primitive("loom", {"point": p3, "duration_sec": 1.0}),
+            Primitive("waypoint_move", {"x_cm": 1.25, "y_cm": -0.5, "duration_sec": 1.0}),
+        ],
+    )
+    original_kinds = [primitive.kind for primitive in spec.primitives]
+
+    mirror_stimulus_in_place(spec)
+
+    assert [primitive.kind for primitive in spec.primitives] == original_kinds
+    assert spec.primitives[0].params["point"]["angle_deg"] == -p1["angle_deg"]
+    assert spec.primitives[1].params["point"]["angle_deg"] == -p2["angle_deg"]
+    assert [point["angle_deg"] for point in spec.primitives[2].params["points"]] == [-p1["angle_deg"], -p2["angle_deg"]]
+    assert [point["angle_deg"] for point in spec.primitives[3].params["points"]] == [-p2["angle_deg"], -p3["angle_deg"]]
+    assert [point["angle_deg"] for point in spec.primitives[4].params["points"]] == [-p1["angle_deg"], -p2["angle_deg"], -p3["angle_deg"]]
+    assert [point["angle_deg"] for point in spec.primitives[5].params["points"]] == [-p1["angle_deg"], -p3["angle_deg"]]
+    assert [point["angle_deg"] for point in spec.primitives[6].params["points"]] == [-p1["angle_deg"], -p2["angle_deg"]]
+    assert spec.primitives[7].params["point"]["angle_deg"] == -p3["angle_deg"]
+    assert spec.primitives[8].params["x_cm"] == pytest.approx(-1.25)
 
 
 def test_project_from_dict_loads_legacy_without_grid_settings():

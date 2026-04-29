@@ -14,6 +14,38 @@ Append meaningful handoffs using this template.
 - Next likely breakpoint:
 - Rerun implications:
 
+## 2026-04-29
+
+- Date: 2026-04-29
+- Short label: Stimulus designer 2 cm first ring default
+- Slice goal: Start new GUI projects with the first placement ring 2 cm from the fish.
+- Passes completed: Updated the `GridSettings` default and matching backend/GUI startup tests.
+- What changed: New stimulus designer projects now use first ring radius 2.00 cm; existing saved projects keep their serialized grid setting.
+- What remains broken: Nothing known.
+- Remaining in-slice work: None.
+- Next likely breakpoint: Existing saved projects may still open with older 1.00 cm first-ring values until edited.
+- Rerun implications: Run `python -m pytest tests/test_stimulus_designer.py tests/test_stimulus_designer_app.py -q`.
+
+- Date: 2026-04-29
+- Short label: Stimulus designer avoidance fill and petri dish guide
+- Slice goal: Emphasize the near-fish avoidance area and show the 10 cm dish boundary in the calibrated preview.
+- Passes completed: Filled the 18 mm avoidance circle with translucent red, added a fish-centered 10 cm diameter petri dish guide, and updated GUI tests.
+- What changed: `scripts/stimuli/stimulus_designer_app.py` now draws preview-only avoidance and petri dish guides without changing trajectory exports or projection playback.
+- What remains broken: Manual visual confirmation is still useful because the 10 cm dish slightly exceeds the current 9.5 cm calibrated screen height.
+- Remaining in-slice work: Confirm the red fill opacity is strong enough without obscuring grid/stimulus details.
+- Next likely breakpoint: If the exact dish center differs from fish origin in a real setup, the guide may need an offset setting.
+- Rerun implications: Run `python -m pytest tests/test_stimulus_designer.py tests/test_stimulus_designer_app.py -q`.
+
+- Date: 2026-04-29
+- Short label: Stimulus designer full timeline mirror and avoidance guide
+- Slice goal: Mirror all selected-stimulus timeline primitives consistently and show a fish-centered near-field avoidance cue.
+- Passes completed: Consolidated point mirroring across primitive params, refreshed GUI state after mirror, added an 18 mm preview-only avoidance circle, and added focused backend/GUI tests.
+- What changed: `src/stimulus_designer.py` now mirrors any primitive `point`/`points` payload while preserving timeline order. `scripts/stimuli/stimulus_designer_app.py` draws an 18 mm radius guide around the fish and refreshes timeline/editor/preview state after mirror.
+- What remains broken: GUI tests still skip where PyQt6 is unavailable; manual visual confirmation of the circle styling is still useful.
+- Remaining in-slice work: Confirm the 18 mm guide reads clearly on the actual workstation display.
+- Next likely breakpoint: The guide radius may need to become configurable once the exact behavioral distance is known.
+- Rerun implications: Run `python -m pytest tests/test_stimulus_designer.py tests/test_stimulus_designer_app.py -q`.
+
 ## 2026-04-28
 
 - Date: 2026-04-28

@@ -43,6 +43,8 @@ class PreviewCanvas(QtWidgets.QWidget):
     MIN_PREVIEW_ZOOM = 1.0
     MAX_PREVIEW_ZOOM = 8.0
     PREVIEW_ZOOM_STEP = 1.15
+    AVOIDANCE_RADIUS_CM = 1.8
+    PETRI_DISH_RADIUS_CM = 5.0
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -305,6 +307,7 @@ class PreviewCanvas(QtWidgets.QWidget):
         painter.setPen(axis_pen)
         painter.drawLine(QtCore.QPointF(screen_rect.left(), center.y()), QtCore.QPointF(screen_rect.right(), center.y()))
         painter.drawLine(QtCore.QPointF(center.x(), screen_rect.top()), QtCore.QPointF(center.x(), screen_rect.bottom()))
+        self._draw_petri_dish(painter, center, scale)
 
         row = None
         if not self.df.empty:
@@ -315,6 +318,7 @@ class PreviewCanvas(QtWidgets.QWidget):
         fish_pen.setWidth(2)
         painter.setPen(fish_pen)
         painter.setBrush(QtGui.QColor("#d9efe7"))
+        self._draw_avoidance_circle(painter, center, scale)
         self._draw_fish_icon(painter, center)
 
         selected_points = self._selected_grid_points()
@@ -413,6 +417,24 @@ class PreviewCanvas(QtWidgets.QWidget):
         color = QtGui.QColor("#111111")
         color.setAlphaF(0.4)
         return color
+
+    def _draw_avoidance_circle(self, painter: QtGui.QPainter, center: QtCore.QPointF, scale: float) -> None:
+        fill = QtGui.QColor("#d84040")
+        fill.setAlpha(72)
+        pen = QtGui.QPen(QtGui.QColor("#b51f1f"))
+        pen.setWidth(2)
+        painter.setPen(pen)
+        painter.setBrush(fill)
+        radius_px = self.AVOIDANCE_RADIUS_CM * scale
+        painter.drawEllipse(center, radius_px, radius_px)
+
+    def _draw_petri_dish(self, painter: QtGui.QPainter, center: QtCore.QPointF, scale: float) -> None:
+        pen = QtGui.QPen(QtGui.QColor("#7b6f58"))
+        pen.setWidth(2)
+        painter.setPen(pen)
+        painter.setBrush(QtCore.Qt.BrushStyle.NoBrush)
+        radius_px = self.PETRI_DISH_RADIUS_CM * scale
+        painter.drawEllipse(center, radius_px, radius_px)
 
     def _draw_fish_icon(self, painter: QtGui.QPainter, center: QtCore.QPointF) -> None:
         painter.save()
@@ -1104,6 +1126,7 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
             return
         mirror_stimulus_in_place(stim, self.project.global_params)
         self._refresh_fields()
+        self._refresh_timeline_rows()
         self._refresh_preview()
 
     def _default_primitive_params(self, kind: str) -> dict:
