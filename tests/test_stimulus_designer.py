@@ -233,6 +233,84 @@ def test_linear_continuous_interpolates_between_step_positions():
     assert df["dot0_x"].nunique() > 3
 
 
+def test_linear_default_step_size_is_half_centimeter():
+    params = GlobalStimulusParams(framerate=10)
+    spec = StimulusSpec(
+        key="Linear_Default",
+        primitives=[
+            Primitive(
+                "linear",
+                {
+                    "points": [
+                        {"x_cm": 0.0, "y_cm": 0.0},
+                        {"x_cm": 1.2, "y_cm": 0.0},
+                    ],
+                    "movement_interval_ms": 100,
+                    "mode": "bout",
+                },
+            )
+        ],
+    )
+    df = generate_stimulus_dataframe(spec, params)
+    assert list(df["dot0_x"]) == pytest.approx([0.0, 0.5, 1.0, 1.5])
+
+
+def test_bezier_arc_bout_uses_start_end_and_control_point():
+    params = GlobalStimulusParams(framerate=10)
+    spec = StimulusSpec(
+        key="Bezier",
+        primitives=[
+            Primitive(
+                "bezier_arc",
+                {
+                    "points": [
+                        {"x_cm": 0.0, "y_cm": 0.0},
+                        {"x_cm": 1.0, "y_cm": 0.0},
+                        {"x_cm": 0.5, "y_cm": 1.0},
+                    ],
+                    "movement_interval_ms": 100,
+                    "mode": "bout",
+                    "step_distance_cm": 0.5,
+                },
+            )
+        ],
+    )
+    df = generate_stimulus_dataframe(spec, params)
+    assert len(df) >= 4
+    assert df.iloc[0]["dot0_x"] == pytest.approx(0.0)
+    assert df.iloc[0]["dot0_y"] == pytest.approx(0.0)
+    assert df.iloc[-1]["dot0_x"] == pytest.approx(1.0)
+    assert df.iloc[-1]["dot0_y"] == pytest.approx(0.0)
+    assert df["dot0_y"].max() > 0.0
+
+
+def test_bezier_arc_continuous_interpolates_between_step_positions():
+    params = GlobalStimulusParams(framerate=10)
+    spec = StimulusSpec(
+        key="Bezier",
+        primitives=[
+            Primitive(
+                "bezier_arc",
+                {
+                    "points": [
+                        {"x_cm": 0.0, "y_cm": 0.0},
+                        {"x_cm": 1.0, "y_cm": 0.0},
+                        {"x_cm": 0.5, "y_cm": 1.0},
+                    ],
+                    "movement_interval_ms": 200,
+                    "mode": "continuous",
+                    "step_distance_cm": 0.5,
+                },
+            )
+        ],
+    )
+    df = generate_stimulus_dataframe(spec, params)
+    assert len(df) > 4
+    assert df.iloc[0]["dot0_x"] == pytest.approx(0.0)
+    assert df.iloc[-1]["dot0_x"] == pytest.approx(1.0)
+    assert df["dot0_x"].nunique() > 4
+
+
 def test_primitive_duration_summary_reports_cumulative_times():
     spec = StimulusSpec(
         key="Durations",
@@ -345,6 +423,7 @@ def test_mirror_stimulus_mirrors_all_timeline_primitive_points_in_order():
             Primitive("rocking_lr", {"points": [p2, p3], "duration_sec": 1.0}),
             Primitive("point_path", {"points": [p1, p2, p3], "movement_interval_ms": 600, "mode": "bout"}),
             Primitive("linear", {"points": [p1, p3], "movement_interval_ms": 600, "mode": "bout"}),
+            Primitive("bezier_arc", {"points": [p1, p2, p3], "movement_interval_ms": 600, "mode": "bout"}),
             Primitive("whole_field_grating", {"points": [p1, p2], "duration_sec": 1.0}),
             Primitive("loom", {"point": p3, "duration_sec": 1.0}),
             Primitive("waypoint_move", {"x_cm": 1.25, "y_cm": -0.5, "duration_sec": 1.0}),
@@ -361,9 +440,10 @@ def test_mirror_stimulus_mirrors_all_timeline_primitive_points_in_order():
     assert [point["angle_deg"] for point in spec.primitives[3].params["points"]] == [-p2["angle_deg"], -p3["angle_deg"]]
     assert [point["angle_deg"] for point in spec.primitives[4].params["points"]] == [-p1["angle_deg"], -p2["angle_deg"], -p3["angle_deg"]]
     assert [point["angle_deg"] for point in spec.primitives[5].params["points"]] == [-p1["angle_deg"], -p3["angle_deg"]]
-    assert [point["angle_deg"] for point in spec.primitives[6].params["points"]] == [-p1["angle_deg"], -p2["angle_deg"]]
-    assert spec.primitives[7].params["point"]["angle_deg"] == -p3["angle_deg"]
-    assert spec.primitives[8].params["x_cm"] == pytest.approx(-1.25)
+    assert [point["angle_deg"] for point in spec.primitives[6].params["points"]] == [-p1["angle_deg"], -p2["angle_deg"], -p3["angle_deg"]]
+    assert [point["angle_deg"] for point in spec.primitives[7].params["points"]] == [-p1["angle_deg"], -p2["angle_deg"]]
+    assert spec.primitives[8].params["point"]["angle_deg"] == -p3["angle_deg"]
+    assert spec.primitives[9].params["x_cm"] == pytest.approx(-1.25)
 
 
 def test_project_from_dict_loads_legacy_without_grid_settings():

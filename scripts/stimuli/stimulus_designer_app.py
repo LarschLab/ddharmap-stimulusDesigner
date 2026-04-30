@@ -37,6 +37,122 @@ from src.stimulus_designer import (
 )
 
 
+class StimulusListWidget(QtWidgets.QListWidget):
+    stimulusMoved = QtCore.pyqtSignal(int, int)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.drop_indicator_row: int | None = None
+        self._drag_source_row: int | None = None
+        self._drag_press_pos: QtCore.QPoint | None = None
+        self._is_reorder_dragging = False
+        self.setMouseTracking(True)
+        self.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.SingleSelection)
+        self.setDragEnabled(False)
+        self.setAcceptDrops(False)
+        self.setDropIndicatorShown(False)
+        self.setDragDropMode(QtWidgets.QAbstractItemView.DragDropMode.NoDragDrop)
+
+    def _drop_index_for_pos(self, pos: QtCore.QPoint) -> int:
+        if self.count() == 0:
+            return 0
+        item = self.itemAt(pos)
+        if item is None:
+            return 0 if pos.y() < 0 else self.count()
+        row = self.row(item)
+        rect = self.visualItemRect(item)
+        return row if pos.y() < rect.center().y() else row + 1
+
+    def _indicator_y_for_row(self, row: int) -> int:
+        if self.count() == 0:
+            return 0
+        if row <= 0:
+            return self.visualItemRect(self.item(0)).top()
+        if row >= self.count():
+            return self.visualItemRect(self.item(self.count() - 1)).bottom() + 1
+        return self.visualItemRect(self.item(row)).top()
+
+    def _normalized_target_row(self, source_row: int, drop_index: int) -> int:
+        if source_row < 0 or source_row >= self.count():
+            return source_row
+        target_row = drop_index
+        if target_row > source_row:
+            target_row -= 1
+        return max(0, min(target_row, self.count() - 1))
+
+    def _clear_reorder_drag(self) -> None:
+        self.drop_indicator_row = None
+        self._drag_source_row = None
+        self._drag_press_pos = None
+        self._is_reorder_dragging = False
+        self.unsetCursor()
+        self.viewport().update()
+
+    def mousePressEvent(self, event):
+        if event.button() == QtCore.Qt.MouseButton.LeftButton:
+            self._drag_source_row = self.indexAt(event.position().toPoint()).row()
+            if self._drag_source_row < 0:
+                self._drag_source_row = None
+            self._drag_press_pos = event.position().toPoint()
+            self._is_reorder_dragging = False
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if (
+            self._drag_source_row is not None
+            and self._drag_press_pos is not None
+            and event.buttons() & QtCore.Qt.MouseButton.LeftButton
+        ):
+            distance = (event.position().toPoint() - self._drag_press_pos).manhattanLength()
+            if self._is_reorder_dragging or distance >= QtWidgets.QApplication.startDragDistance():
+                self._is_reorder_dragging = True
+                self.drop_indicator_row = self._drop_index_for_pos(event.position().toPoint())
+                self.setCursor(QtCore.Qt.CursorShape.ClosedHandCursor)
+                self.viewport().update()
+                event.accept()
+                return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == QtCore.Qt.MouseButton.LeftButton and self._drag_source_row is not None:
+            source_row = self._drag_source_row
+            was_dragging = self._is_reorder_dragging
+            drop_index = self._drop_index_for_pos(event.position().toPoint())
+            target_row = self._normalized_target_row(source_row, drop_index)
+            self._clear_reorder_drag()
+            if was_dragging:
+                if target_row != source_row:
+                    self.stimulusMoved.emit(source_row, target_row)
+                event.accept()
+                return
+        super().mouseReleaseEvent(event)
+
+    def leaveEvent(self, event):
+        if not self._is_reorder_dragging:
+            self.drop_indicator_row = None
+            self.viewport().update()
+        super().leaveEvent(event)
+
+    def dragLeaveEvent(self, event):
+        self.drop_indicator_row = None
+        self.viewport().update()
+        super().dragLeaveEvent(event)
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        if self.drop_indicator_row is None:
+            return
+        painter = QtGui.QPainter(self.viewport())
+        try:
+            pen = QtGui.QPen(QtGui.QColor("#1f6feb"))
+            pen.setWidth(3)
+            painter.setPen(pen)
+            y = self._indicator_y_for_row(self.drop_indicator_row)
+            painter.drawLine(4, y, self.viewport().width() - 4, y)
+        finally:
+            painter.end()
+
+
 class PreviewCanvas(QtWidgets.QWidget):
     frame_changed = QtCore.pyqtSignal(int)
     grid_point_clicked = QtCore.pyqtSignal(int, int)
@@ -44,7 +160,7 @@ class PreviewCanvas(QtWidgets.QWidget):
     MAX_PREVIEW_ZOOM = 8.0
     PREVIEW_ZOOM_STEP = 1.15
     AVOIDANCE_RADIUS_CM = 1.8
-    PETRI_DISH_RADIUS_CM = 5.0
+    PETRI_DISH_RADIUS_CM = 4.35
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -196,7 +312,7 @@ class PreviewCanvas(QtWidgets.QWidget):
         for primitive in self.stimulus.primitives:
             if primitive.kind in {"static_hold", "flicker", "loom"}:
                 points = [primitive.params.get("point")]
-            elif primitive.kind in {"rocking", "rocking_lr", "point_path", "whole_field_grating", "linear"}:
+            elif primitive.kind in {"rocking", "rocking_lr", "point_path", "whole_field_grating", "linear", "bezier_arc"}:
                 points = primitive.params.get("points", [])
             else:
                 continue
@@ -542,11 +658,15 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
     MIN_ZOOM = 0.55
     MAX_ZOOM = 1.50
     ZOOM_STEP = 0.10
+    SETTINGS_ORG = "social_filters"
+    SETTINGS_APP = "stimulus_designer"
+    LAST_PROJECT_PATH_KEY = "last_project_path"
 
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Stimulus Designer")
         self.project = default_project()
+        self.current_project_path: Path | None = None
         self.current_output_dir: Path | None = None
         self.zoom_factor = 1.0
         self.timer = QtCore.QTimer(self)
@@ -556,6 +676,7 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
         if app is not None:
             app.installEventFilter(self)
         self._install_zoom_shortcuts()
+        self._load_last_project_if_available()
         self._refresh_all()
         self._apply_startup_zoom()
 
@@ -563,6 +684,35 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
         widget.setProperty("description_text", description)
         if isinstance(widget, QtWidgets.QWidget):
             widget.setToolTip(description)
+
+    def _settings(self) -> QtCore.QSettings:
+        return QtCore.QSettings(self.SETTINGS_ORG, self.SETTINGS_APP)
+
+    def _remember_project_path(self, path: str | Path) -> None:
+        project_path = Path(path).expanduser().resolve()
+        self.current_project_path = project_path
+        self._settings().setValue(self.LAST_PROJECT_PATH_KEY, str(project_path))
+
+    def _clear_last_project_path(self) -> None:
+        self.current_project_path = None
+        self._settings().remove(self.LAST_PROJECT_PATH_KEY)
+
+    def _load_last_project_if_available(self) -> bool:
+        path_value = self._settings().value(self.LAST_PROJECT_PATH_KEY, "", type=str)
+        if not path_value:
+            return False
+        path = Path(path_value)
+        if not path.exists():
+            self._clear_last_project_path()
+            return False
+        try:
+            self.project = load_project(path)
+        except Exception:
+            self.project = default_project()
+            self._clear_last_project_path()
+            return False
+        self.current_project_path = path
+        return True
 
     def _build_ui(self):
         central = QtWidgets.QWidget()
@@ -572,8 +722,9 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
         self.setCentralWidget(self.scaled_view)
 
         left = QtWidgets.QVBoxLayout()
-        self.stimulus_list = QtWidgets.QListWidget()
+        self.stimulus_list = StimulusListWidget()
         self.stimulus_list.currentRowChanged.connect(self._on_stimulus_selected)
+        self.stimulus_list.stimulusMoved.connect(self._move_stimulus)
         left.addWidget(QtWidgets.QLabel("Stimuli"))
         left.addWidget(self.stimulus_list)
 
@@ -653,7 +804,7 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
         right.addWidget(self.primitive_list)
         primitive_buttons = QtWidgets.QHBoxLayout()
         self.kind_combo = QtWidgets.QComboBox()
-        self.kind_combo.addItems(["static_hold", "flicker", "rocking", "rocking_lr", "point_path", "linear", "whole_field_grating", "loom"])
+        self.kind_combo.addItems(["static_hold", "flicker", "rocking", "rocking_lr", "point_path", "linear", "bezier_arc", "whole_field_grating", "loom"])
         add_prim_btn = QtWidgets.QPushButton("Add")
         add_prim_btn.clicked.connect(self._add_primitive)
         del_prim_btn = QtWidgets.QPushButton("Delete")
@@ -750,7 +901,7 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
         self._register_description(self.speed_spin, "Whole-field grating motion speed.")
         self._register_description(self.growth_speed_spin, "Loom radius growth speed.")
         self._register_description(self.max_radius_spin, "Maximum loom radius; the loom holds here until duration ends.")
-        self._register_description(self.step_distance_spin, "Distance moved along the linear path at each interval.")
+        self._register_description(self.step_distance_spin, "Distance moved along stepped linear or arc paths at each interval.")
         self.stimulus_params_group.setSizePolicy(QtWidgets.QSizePolicy.Policy.Preferred, QtWidgets.QSizePolicy.Policy.Fixed)
         right.addWidget(self.stimulus_params_group)
 
@@ -1120,6 +1271,17 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
         del self.project.stimuli[row]
         self._refresh_all()
 
+    def _move_stimulus(self, from_row: int, to_row: int) -> None:
+        if from_row < 0 or from_row >= len(self.project.stimuli):
+            return
+        to_row = max(0, min(to_row, len(self.project.stimuli) - 1))
+        if from_row == to_row:
+            return
+        stim = self.project.stimuli.pop(from_row)
+        self.project.stimuli.insert(to_row, stim)
+        self._refresh_all()
+        self.stimulus_list.setCurrentRow(to_row)
+
     def _mirror_stimulus(self):
         stim = self._current_stimulus()
         if not stim:
@@ -1144,7 +1306,13 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
                 "points": [],
                 "movement_interval_ms": self.project.grid_settings.movement_interval_ms,
                 "mode": self.project.grid_settings.movement_mode,
-                "step_distance_cm": 0.2,
+                "step_distance_cm": 0.5,
+            },
+            "bezier_arc": {
+                "points": [],
+                "movement_interval_ms": self.project.grid_settings.movement_interval_ms,
+                "mode": self.project.grid_settings.movement_mode,
+                "step_distance_cm": 0.5,
             },
             "whole_field_grating": {
                 "points": [],
@@ -1190,6 +1358,8 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
             primitive.params["points"] = self._toggle_limited_point_list(primitive.params.get("points", []), point, limit=2)
         elif primitive.kind in {"whole_field_grating", "linear"}:
             primitive.params["points"] = self._toggle_limited_point_list(primitive.params.get("points", []), point, limit=2)
+        elif primitive.kind == "bezier_arc":
+            primitive.params["points"] = self._toggle_limited_point_list(primitive.params.get("points", []), point, limit=3)
         elif primitive.kind == "point_path":
             primitive.params["points"] = self._toggle_limited_point_list(primitive.params.get("points", []), point, limit=None)
             primitive.params["movement_interval_ms"] = primitive.params.get("movement_interval_ms", self.project.grid_settings.movement_interval_ms)
@@ -1254,7 +1424,7 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
                 relevant = {"Duration", "Interval", "Flickering"}
             elif primitive.kind == "point_path":
                 relevant = {"Interval", "Mode"}
-            elif primitive.kind == "linear":
+            elif primitive.kind in {"linear", "bezier_arc"}:
                 relevant = {"Interval", "Mode", "Step distance"}
             elif primitive.kind == "whole_field_grating":
                 relevant = {"Duration", "Bar thickness", "Speed"}
@@ -1279,7 +1449,7 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
         self.speed_spin.setValue(float(primitive.params.get("speed_cm_sec", self.project.global_params.speed_cm_sec)))
         self.growth_speed_spin.setValue(float(primitive.params.get("growth_speed_cm_sec", 1.0)))
         self.max_radius_spin.setValue(float(primitive.params.get("max_radius_cm", 3.0)))
-        self.step_distance_spin.setValue(float(primitive.params.get("step_distance_cm", 0.2)))
+        self.step_distance_spin.setValue(float(primitive.params.get("step_distance_cm", 0.5)))
         del blockers
 
     def _apply_stimulus_parameter_fields(self):
@@ -1288,9 +1458,9 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
             return
         if primitive.kind in {"static_hold", "flicker", "rocking", "rocking_lr", "whole_field_grating", "loom"}:
             primitive.params["duration_sec"] = self.duration_spin.value()
-        if primitive.kind in {"rocking", "rocking_lr", "point_path", "linear"}:
+        if primitive.kind in {"rocking", "rocking_lr", "point_path", "linear", "bezier_arc"}:
             primitive.params["movement_interval_ms"] = self.primitive_interval_spin.value()
-        if primitive.kind in {"point_path", "linear"}:
+        if primitive.kind in {"point_path", "linear", "bezier_arc"}:
             primitive.params["mode"] = self.primitive_mode_combo.currentText()
         if primitive.kind == "flicker":
             primitive.params["flicker_interval_sec"] = self.flicker_interval_spin.value()
@@ -1302,7 +1472,7 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
         if primitive.kind == "loom":
             primitive.params["growth_speed_cm_sec"] = self.growth_speed_spin.value()
             primitive.params["max_radius_cm"] = self.max_radius_spin.value()
-        if primitive.kind == "linear":
+        if primitive.kind in {"linear", "bezier_arc"}:
             primitive.params["step_distance_cm"] = self.step_distance_spin.value()
         self._load_primitive_editor(self.primitive_list.currentRow())
         self._refresh_timeline_rows()
@@ -1333,17 +1503,20 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
         path, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Open project", "", "JSON (*.json)")
         if path:
             self.project = load_project(path)
+            self._remember_project_path(path)
             self._refresh_all()
 
     def _save_project(self):
         path, _ = QtWidgets.QFileDialog.getSaveFileName(self, "Save project", "stimulus_designer_project.json", "JSON (*.json)")
         if path:
             save_project(self.project, path)
+            self._remember_project_path(path)
 
     def _import_legacy(self):
         path, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Import legacy stimulus JSON", "", "JSON (*.json)")
         if path:
             self.project = import_legacy_config(path)
+            self.current_project_path = None
             self._refresh_all()
 
     def _export_csvs(self):

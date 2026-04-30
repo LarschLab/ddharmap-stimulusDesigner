@@ -335,7 +335,7 @@ def _linear_step_points(linear_params: dict[str, Any], params: GlobalStimulusPar
     distance = math.hypot(dx, dy)
     if distance == 0:
         return []
-    step_distance = max(0.001, float(linear_params.get("step_distance_cm", 0.2)))
+    step_distance = max(0.001, float(linear_params.get("step_distance_cm", 0.5)))
     unit_x = dx / distance
     unit_y = dy / distance
     steps_to_exceed = int(math.floor(distance / step_distance)) + 1
@@ -350,8 +350,12 @@ def _linear_rows(linear_params: dict[str, Any], params: GlobalStimulusParams) ->
     positions = _linear_step_points(linear_params, params)
     if not positions:
         return []
-    mode = str(linear_params.get("mode", "bout")).lower()
-    interval_ms = float(linear_params.get("movement_interval_ms", params.update_interval_ms))
+    return _rows_from_step_positions(positions, linear_params, params)
+
+
+def _rows_from_step_positions(positions: list[tuple[float, float]], movement_params: dict[str, Any], params: GlobalStimulusParams) -> list[dict[str, float]]:
+    mode = str(movement_params.get("mode", "bout")).lower()
+    interval_ms = float(movement_params.get("movement_interval_ms", params.update_interval_ms))
     frames = max(1, int(round((interval_ms / 1000.0) * params.framerate)))
     rows: list[dict[str, float]] = []
     if mode == "continuous" and len(positions) > 1:
@@ -366,6 +370,58 @@ def _linear_rows(linear_params: dict[str, Any], params: GlobalStimulusParams) ->
         for x, y in positions:
             _append_rows(rows, x, y, params.dot_size_cm, frames)
     return rows
+
+
+def _quadratic_bezier_point(start: tuple[float, float], control: tuple[float, float], end: tuple[float, float], t: float) -> tuple[float, float]:
+    one_minus = 1.0 - t
+    x = one_minus * one_minus * start[0] + 2.0 * one_minus * t * control[0] + t * t * end[0]
+    y = one_minus * one_minus * start[1] + 2.0 * one_minus * t * control[1] + t * t * end[1]
+    return x, y
+
+
+def _bezier_arc_step_points(arc_params: dict[str, Any], params: GlobalStimulusParams) -> list[tuple[float, float]]:
+    points = [point for point in arc_params.get("points", []) if isinstance(point, dict)]
+    if len(points) < 3:
+        return []
+    start = _point_xy(points[0], params)
+    end = _point_xy(points[1], params)
+    control = _point_xy(points[2], params)
+    step_distance = max(0.001, float(arc_params.get("step_distance_cm", 0.5)))
+    samples = 512
+    sampled_points = [
+        _quadratic_bezier_point(start, control, end, index / float(samples))
+        for index in range(samples + 1)
+    ]
+    cumulative = [0.0]
+    for p0, p1 in zip(sampled_points[:-1], sampled_points[1:]):
+        cumulative.append(cumulative[-1] + math.hypot(p1[0] - p0[0], p1[1] - p0[1]))
+    total_length = cumulative[-1]
+    if total_length == 0.0:
+        return []
+
+    target_distances = list(np.arange(0.0, total_length, step_distance))
+    if not target_distances or target_distances[-1] != total_length:
+        target_distances.append(total_length)
+
+    positions: list[tuple[float, float]] = []
+    segment_index = 0
+    for distance in target_distances:
+        while segment_index < len(cumulative) - 2 and cumulative[segment_index + 1] < distance:
+            segment_index += 1
+        d0 = cumulative[segment_index]
+        d1 = cumulative[segment_index + 1]
+        p0 = sampled_points[segment_index]
+        p1 = sampled_points[segment_index + 1]
+        frac = 0.0 if d1 == d0 else (distance - d0) / (d1 - d0)
+        positions.append((p0[0] + (p1[0] - p0[0]) * frac, p0[1] + (p1[1] - p0[1]) * frac))
+    return positions
+
+
+def _bezier_arc_rows(arc_params: dict[str, Any], params: GlobalStimulusParams) -> list[dict[str, float]]:
+    positions = _bezier_arc_step_points(arc_params, params)
+    if not positions:
+        return []
+    return _rows_from_step_positions(positions, arc_params, params)
 
 
 def _point_rocking_rows(rocking_params: dict[str, Any], params: GlobalStimulusParams) -> list[dict[str, float]]:
@@ -577,6 +633,13 @@ def _generate_dot_rows(spec: StimulusSpec, dot_index: int, params: GlobalStimulu
             if linear_rows:
                 current_x = linear_rows[-1]["x"]
                 current_y = linear_rows[-1]["y"]
+
+        elif kind == "bezier_arc":
+            arc_rows = _bezier_arc_rows(p, params)
+            rows.extend(arc_rows)
+            if arc_rows:
+                current_x = arc_rows[-1]["x"]
+                current_y = arc_rows[-1]["y"]
 
         elif kind == "whole_field_grating":
             rows.extend(_grating_rows(p, params, current_x, current_y))

@@ -1,0 +1,769 @@
+{
+  "name": "stimulus_project",
+  "calibration": {
+    "screen_width_px": 1280,
+    "screen_height_px": 800,
+    "screen_width_mm": 152.0,
+    "screen_height_mm": 95.0
+  },
+  "global_params": {
+    "radius_cm": 1.8,
+    "speed_cm_sec": 0.497,
+    "framerate": 60.0,
+    "update_interval_ms": 600.0,
+    "static_period_sec": 10.0,
+    "dot_size_cm": 0.2,
+    "rotation_angle_deg": 45.0,
+    "flicker_interval_sec": 0.3,
+    "pause_before_sec": 12.5,
+    "pause_after_sec": 12.5,
+    "repetitions": 1
+  },
+  "grid_settings": {
+    "ring_count": 5,
+    "first_ring_radius_cm": 2.0,
+    "ring_spacing_cm": 0.4,
+    "points_per_ring": 24,
+    "movement_interval_ms": 700.0,
+    "movement_mode": "bout"
+  },
+  "stimuli": [
+    {
+      "key": "RAB",
+      "name": "Right approach bout",
+      "n_dots": 1,
+      "primitives": [
+        {
+          "kind": "static_hold",
+          "params": {
+            "duration_sec": 10.0,
+            "point": {
+              "ring_index": 4,
+              "point_index": 19,
+              "points_per_ring": 24,
+              "radius_cm": 3.6,
+              "angle_deg": 105.0,
+              "x_cm": 3.118,
+              "y_cm": 1.8
+            }
+          }
+        },
+        {
+          "kind": "linear",
+          "params": {
+            "points": [
+              {
+                "ring_index": 4,
+                "point_index": 19,
+                "points_per_ring": 24,
+                "radius_cm": 3.6,
+                "angle_deg": 105.0,
+                "x_cm": 3.118,
+                "y_cm": 1.8
+              },
+              {
+                "ring_index": 4,
+                "point_index": 11,
+                "points_per_ring": 24,
+                "radius_cm": 3.6,
+                "angle_deg": -15.0,
+                "x_cm": -3.118,
+                "y_cm": 1.8
+              }
+            ],
+            "movement_interval_ms": 700.0,
+            "mode": "bout",
+            "step_distance_cm": 0.5
+          }
+        }
+      ]
+    },
+    {
+      "key": "LAB",
+      "name": "Left approach bout",
+      "n_dots": 1,
+      "primitives": [
+        {
+          "kind": "static_hold",
+          "params": {
+            "duration_sec": 10.0,
+            "point": {
+              "ring_index": 4,
+              "point_index": 5,
+              "points_per_ring": 24,
+              "radius_cm": 3.6,
+              "angle_deg": -105.0,
+              "x_cm": -1.8,
+              "y_cm": -3.118
+            }
+          }
+        },
+        {
+          "kind": "linear",
+          "params": {
+            "points": [
+              {
+                "ring_index": 4,
+                "point_index": 5,
+                "points_per_ring": 24,
+                "radius_cm": 3.6,
+                "angle_deg": -105.0,
+                "x_cm": -1.8,
+                "y_cm": -3.118
+              },
+              {
+                "ring_index": 4,
+                "point_index": 13,
+                "points_per_ring": 24,
+                "radius_cm": 3.6,
+                "angle_deg": 15.0,
+                "x_cm": -1.8,
+                "y_cm": 3.118
+              }
+            ],
+            "movement_interval_ms": 700.0,
+            "mode": "bout",
+            "step_distance_cm": 0.5
+          }
+        }
+      ]
+    },
+    {
+      "key": "RAC",
+      "name": "Right approach continuous",
+      "n_dots": 1,
+      "primitives": [
+        {
+          "kind": "static_hold",
+          "params": {
+            "duration_sec": 10.0,
+            "point": {
+              "ring_index": 4,
+              "point_index": 19,
+              "points_per_ring": 24,
+              "radius_cm": 3.6,
+              "angle_deg": 105.0,
+              "x_cm": 3.118,
+              "y_cm": 1.8
+            }
+          }
+        },
+        {
+          "kind": "linear",
+          "params": {
+            "points": [
+              {
+                "ring_index": 4,
+                "point_index": 19,
+                "points_per_ring": 24,
+                "radius_cm": 3.6,
+                "angle_deg": 105.0,
+                "x_cm": 3.118,
+                "y_cm": 1.8
+              },
+              {
+                "ring_index": 4,
+                "point_index": 11,
+                "points_per_ring": 24,
+                "radius_cm": 3.6,
+                "angle_deg": -15.0,
+                "x_cm": -3.118,
+                "y_cm": 1.8
+              }
+            ],
+            "movement_interval_ms": 700.0,
+            "mode": "continuous",
+            "step_distance_cm": 0.5
+          }
+        }
+      ]
+    },
+    {
+      "key": "LAC",
+      "name": "Left approach continuous",
+      "n_dots": 1,
+      "primitives": [
+        {
+          "kind": "static_hold",
+          "params": {
+            "duration_sec": 10.0,
+            "point": {
+              "ring_index": 4,
+              "point_index": 5,
+              "points_per_ring": 24,
+              "radius_cm": 3.6,
+              "angle_deg": -105.0,
+              "x_cm": -1.8,
+              "y_cm": -3.118
+            }
+          }
+        },
+        {
+          "kind": "linear",
+          "params": {
+            "points": [
+              {
+                "ring_index": 4,
+                "point_index": 5,
+                "points_per_ring": 24,
+                "radius_cm": 3.6,
+                "angle_deg": -105.0,
+                "x_cm": -1.8,
+                "y_cm": -3.118
+              },
+              {
+                "ring_index": 4,
+                "point_index": 13,
+                "points_per_ring": 24,
+                "radius_cm": 3.6,
+                "angle_deg": 15.0,
+                "x_cm": -1.8,
+                "y_cm": 3.118
+              }
+            ],
+            "movement_interval_ms": 700.0,
+            "mode": "continuous",
+            "step_distance_cm": 0.5
+          }
+        }
+      ]
+    },
+    {
+      "key": "LRB",
+      "name": "Left repulse bout",
+      "n_dots": 1,
+      "primitives": [
+        {
+          "kind": "static_hold",
+          "params": {
+            "duration_sec": 10.0,
+            "point": {
+              "ring_index": 4,
+              "point_index": 9,
+              "points_per_ring": 24,
+              "radius_cm": 3.6,
+              "angle_deg": -45.0,
+              "x_cm": -3.6,
+              "y_cm": 0.0
+            }
+          }
+        },
+        {
+          "kind": "linear",
+          "params": {
+            "points": [
+              {
+                "ring_index": 4,
+                "point_index": 9,
+                "points_per_ring": 24,
+                "radius_cm": 3.6,
+                "angle_deg": -45.0,
+                "x_cm": -3.6,
+                "y_cm": 0.0
+              },
+              {
+                "ring_index": 0,
+                "point_index": 20,
+                "points_per_ring": 24,
+                "radius_cm": 2.0,
+                "angle_deg": 120.0,
+                "x_cm": 1.932,
+                "y_cm": 0.518
+              }
+            ],
+            "movement_interval_ms": 700.0,
+            "mode": "bout",
+            "step_distance_cm": 0.5
+          }
+        }
+      ]
+    },
+    {
+      "key": "LRC",
+      "name": "Left repulse continuous",
+      "n_dots": 1,
+      "primitives": [
+        {
+          "kind": "static_hold",
+          "params": {
+            "duration_sec": 10.0,
+            "point": {
+              "ring_index": 4,
+              "point_index": 9,
+              "points_per_ring": 24,
+              "radius_cm": 3.6,
+              "angle_deg": -45.0,
+              "x_cm": -3.6,
+              "y_cm": 0.0
+            }
+          }
+        },
+        {
+          "kind": "linear",
+          "params": {
+            "points": [
+              {
+                "ring_index": 4,
+                "point_index": 9,
+                "points_per_ring": 24,
+                "radius_cm": 3.6,
+                "angle_deg": -45.0,
+                "x_cm": -3.6,
+                "y_cm": 0.0
+              },
+              {
+                "ring_index": 0,
+                "point_index": 20,
+                "points_per_ring": 24,
+                "radius_cm": 2.0,
+                "angle_deg": 120.0,
+                "x_cm": 1.932,
+                "y_cm": 0.518
+              }
+            ],
+            "movement_interval_ms": 700.0,
+            "mode": "continuous",
+            "step_distance_cm": 0.5
+          }
+        }
+      ]
+    },
+    {
+      "key": "RRB",
+      "name": "Right repulse bout",
+      "n_dots": 1,
+      "primitives": [
+        {
+          "kind": "static_hold",
+          "params": {
+            "duration_sec": 10.0,
+            "point": {
+              "ring_index": 4,
+              "point_index": 15,
+              "points_per_ring": 24,
+              "radius_cm": 3.6,
+              "angle_deg": 45.0,
+              "x_cm": 0.0,
+              "y_cm": 3.6
+            }
+          }
+        },
+        {
+          "kind": "linear",
+          "params": {
+            "points": [
+              {
+                "ring_index": 4,
+                "point_index": 15,
+                "points_per_ring": 24,
+                "radius_cm": 3.6,
+                "angle_deg": 45.0,
+                "x_cm": 0.0,
+                "y_cm": 3.6
+              },
+              {
+                "ring_index": 0,
+                "point_index": 4,
+                "points_per_ring": 24,
+                "radius_cm": 2.0,
+                "angle_deg": -120.0,
+                "x_cm": -0.518,
+                "y_cm": -1.932
+              }
+            ],
+            "movement_interval_ms": 700.0,
+            "mode": "bout",
+            "step_distance_cm": 0.5
+          }
+        }
+      ]
+    },
+    {
+      "key": "RRC",
+      "name": "Right repulse continuous",
+      "n_dots": 1,
+      "primitives": [
+        {
+          "kind": "static_hold",
+          "params": {
+            "duration_sec": 10.0,
+            "point": {
+              "ring_index": 4,
+              "point_index": 15,
+              "points_per_ring": 24,
+              "radius_cm": 3.6,
+              "angle_deg": 45.0,
+              "x_cm": 0.0,
+              "y_cm": 3.6
+            }
+          }
+        },
+        {
+          "kind": "linear",
+          "params": {
+            "points": [
+              {
+                "ring_index": 4,
+                "point_index": 15,
+                "points_per_ring": 24,
+                "radius_cm": 3.6,
+                "angle_deg": 45.0,
+                "x_cm": 0.0,
+                "y_cm": 3.6
+              },
+              {
+                "ring_index": 0,
+                "point_index": 4,
+                "points_per_ring": 24,
+                "radius_cm": 2.0,
+                "angle_deg": -120.0,
+                "x_cm": -0.518,
+                "y_cm": -1.932
+              }
+            ],
+            "movement_interval_ms": 700.0,
+            "mode": "continuous",
+            "step_distance_cm": 0.5
+          }
+        }
+      ]
+    },
+    {
+      "key": "LB",
+      "name": "Left bout",
+      "n_dots": 1,
+      "primitives": [
+        {
+          "kind": "static_hold",
+          "params": {
+            "duration_sec": 10.0,
+            "point": {
+              "ring_index": 0,
+              "point_index": 10,
+              "points_per_ring": 24,
+              "radius_cm": 2.0,
+              "angle_deg": -30.0,
+              "x_cm": -1.932,
+              "y_cm": 0.518
+            }
+          }
+        },
+        {
+          "kind": "bezier_arc",
+          "params": {
+            "points": [
+              {
+                "ring_index": 0,
+                "point_index": 10,
+                "points_per_ring": 24,
+                "radius_cm": 2.0,
+                "angle_deg": -30.0,
+                "x_cm": -1.932,
+                "y_cm": 0.518
+              },
+              {
+                "ring_index": 0,
+                "point_index": 2,
+                "points_per_ring": 24,
+                "radius_cm": 2.0,
+                "angle_deg": -150.0,
+                "x_cm": 0.518,
+                "y_cm": -1.932
+              },
+              {
+                "ring_index": 2,
+                "point_index": 6,
+                "points_per_ring": 24,
+                "radius_cm": 2.8,
+                "angle_deg": -90.0,
+                "x_cm": -1.98,
+                "y_cm": -1.98
+              }
+            ],
+            "movement_interval_ms": 700.0,
+            "mode": "bout",
+            "step_distance_cm": 0.5
+          }
+        }
+      ]
+    },
+    {
+      "key": "LC",
+      "name": "Left continuous",
+      "n_dots": 1,
+      "primitives": [
+        {
+          "kind": "static_hold",
+          "params": {
+            "duration_sec": 10.0,
+            "point": {
+              "ring_index": 0,
+              "point_index": 10,
+              "points_per_ring": 24,
+              "radius_cm": 2.0,
+              "angle_deg": -30.0,
+              "x_cm": -1.932,
+              "y_cm": 0.518
+            }
+          }
+        },
+        {
+          "kind": "bezier_arc",
+          "params": {
+            "points": [
+              {
+                "ring_index": 0,
+                "point_index": 10,
+                "points_per_ring": 24,
+                "radius_cm": 2.0,
+                "angle_deg": -30.0,
+                "x_cm": -1.932,
+                "y_cm": 0.518
+              },
+              {
+                "ring_index": 0,
+                "point_index": 2,
+                "points_per_ring": 24,
+                "radius_cm": 2.0,
+                "angle_deg": -150.0,
+                "x_cm": 0.518,
+                "y_cm": -1.932
+              },
+              {
+                "ring_index": 2,
+                "point_index": 6,
+                "points_per_ring": 24,
+                "radius_cm": 2.8,
+                "angle_deg": -90.0,
+                "x_cm": -1.98,
+                "y_cm": -1.98
+              }
+            ],
+            "movement_interval_ms": 700.0,
+            "mode": "continuous",
+            "step_distance_cm": 0.5
+          }
+        }
+      ]
+    },
+    {
+      "key": "RB",
+      "name": "Right bout",
+      "n_dots": 1,
+      "primitives": [
+        {
+          "kind": "static_hold",
+          "params": {
+            "duration_sec": 10.0,
+            "point": {
+              "ring_index": 0,
+              "point_index": 14,
+              "points_per_ring": 24,
+              "radius_cm": 2.0,
+              "angle_deg": 30.0,
+              "x_cm": -0.518,
+              "y_cm": 1.932
+            }
+          }
+        },
+        {
+          "kind": "bezier_arc",
+          "params": {
+            "points": [
+              {
+                "ring_index": 0,
+                "point_index": 14,
+                "points_per_ring": 24,
+                "radius_cm": 2.0,
+                "angle_deg": 30.0,
+                "x_cm": -0.518,
+                "y_cm": 1.932
+              },
+              {
+                "ring_index": 0,
+                "point_index": 22,
+                "points_per_ring": 24,
+                "radius_cm": 2.0,
+                "angle_deg": 150.0,
+                "x_cm": 1.932,
+                "y_cm": -0.518
+              },
+              {
+                "ring_index": 2,
+                "point_index": 18,
+                "points_per_ring": 24,
+                "radius_cm": 2.8,
+                "angle_deg": 90.0,
+                "x_cm": 1.98,
+                "y_cm": 1.98
+              }
+            ],
+            "movement_interval_ms": 700.0,
+            "mode": "bout",
+            "step_distance_cm": 0.5
+          }
+        }
+      ]
+    },
+    {
+      "key": "RC",
+      "name": "Right continuous",
+      "n_dots": 1,
+      "primitives": [
+        {
+          "kind": "static_hold",
+          "params": {
+            "duration_sec": 10.0,
+            "point": {
+              "ring_index": 0,
+              "point_index": 14,
+              "points_per_ring": 24,
+              "radius_cm": 2.0,
+              "angle_deg": 30.0,
+              "x_cm": -0.518,
+              "y_cm": 1.932
+            }
+          }
+        },
+        {
+          "kind": "bezier_arc",
+          "params": {
+            "points": [
+              {
+                "ring_index": 0,
+                "point_index": 14,
+                "points_per_ring": 24,
+                "radius_cm": 2.0,
+                "angle_deg": 30.0,
+                "x_cm": -0.518,
+                "y_cm": 1.932
+              },
+              {
+                "ring_index": 0,
+                "point_index": 22,
+                "points_per_ring": 24,
+                "radius_cm": 2.0,
+                "angle_deg": 150.0,
+                "x_cm": 1.932,
+                "y_cm": -0.518
+              },
+              {
+                "ring_index": 2,
+                "point_index": 18,
+                "points_per_ring": 24,
+                "radius_cm": 2.8,
+                "angle_deg": 90.0,
+                "x_cm": 1.98,
+                "y_cm": 1.98
+              }
+            ],
+            "movement_interval_ms": 700.0,
+            "mode": "continuous",
+            "step_distance_cm": 0.5
+          }
+        }
+      ]
+    },
+    {
+      "key": "Rl_RB",
+      "name": "Right lateral repulse bout",
+      "n_dots": 1,
+      "primitives": [
+        {
+          "kind": "static_hold",
+          "params": {
+            "duration_sec": 10.0,
+            "point": {
+              "ring_index": 4,
+              "point_index": 19,
+              "points_per_ring": 24,
+              "radius_cm": 3.6,
+              "angle_deg": 105.0,
+              "x_cm": 3.118,
+              "y_cm": 1.8
+            }
+          }
+        },
+        {
+          "kind": "linear",
+          "params": {
+            "points": [
+              {
+                "ring_index": 4,
+                "point_index": 19,
+                "points_per_ring": 24,
+                "radius_cm": 3.6,
+                "angle_deg": 105.0,
+                "x_cm": 3.118,
+                "y_cm": 1.8
+              },
+              {
+                "ring_index": 1,
+                "point_index": 8,
+                "points_per_ring": 24,
+                "radius_cm": 2.4,
+                "angle_deg": -60.0,
+                "x_cm": -2.318,
+                "y_cm": -0.621
+              }
+            ],
+            "movement_interval_ms": 700.0,
+            "mode": "bout",
+            "step_distance_cm": 0.5
+          }
+        }
+      ]
+    },
+    {
+      "key": "Ll_RB",
+      "name": "Left lateral repulse bout",
+      "n_dots": 1,
+      "primitives": [
+        {
+          "kind": "static_hold",
+          "params": {
+            "duration_sec": 10.0,
+            "point": {
+              "ring_index": 4,
+              "point_index": 5,
+              "points_per_ring": 24,
+              "radius_cm": 3.6,
+              "angle_deg": -105.0,
+              "x_cm": -1.8,
+              "y_cm": -3.118
+            }
+          }
+        },
+        {
+          "kind": "linear",
+          "params": {
+            "points": [
+              {
+                "ring_index": 4,
+                "point_index": 5,
+                "points_per_ring": 24,
+                "radius_cm": 3.6,
+                "angle_deg": -105.0,
+                "x_cm": -1.8,
+                "y_cm": -3.118
+              },
+              {
+                "ring_index": 1,
+                "point_index": 16,
+                "points_per_ring": 24,
+                "radius_cm": 2.4,
+                "angle_deg": 60.0,
+                "x_cm": 0.621,
+                "y_cm": 2.318
+              }
+            ],
+            "movement_interval_ms": 700.0,
+            "mode": "bout",
+            "step_distance_cm": 0.5
+          }
+        }
+      ]
+    }
+  ],
+  "version": 1
+}
