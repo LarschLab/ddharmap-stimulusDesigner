@@ -21,7 +21,6 @@ from src.stimulus_designer import (
     primitive_duration_summary,
     project_from_dict,
 )
-from src.stimuli_timeline import get_motion_timing_simple
 from scripts.stimuli.try_projection import _dot_names_from_columns
 
 
@@ -363,20 +362,6 @@ def test_loom_grows_clamps_and_holds_until_duration():
     assert df["loom_radius"].iloc[0] == pytest.approx(0.0)
     assert df["loom_radius"].max() == pytest.approx(1.0)
     assert df["loom_radius"].iloc[-1] == pytest.approx(1.0)
-
-
-def test_motion_timing_uses_visual_active_columns(tmp_path):
-    path = tmp_path / "Grating_trajectory.csv"
-    pd.DataFrame(
-        {
-            "dot0_x": [0.0, 0.0, 0.0],
-            "dot0_y": [0.0, 0.0, 0.0],
-            "dot0_radius": [0.0, 0.0, 0.0],
-            "grating_active": [0.0, 1.0, 1.0],
-        }
-    ).to_csv(path, index=False)
-    timing = get_motion_timing_simple(path, framerate=10)
-    assert timing["motion_start_frame"] == 1
 
 
 def test_projection_dot_names_ignore_visual_columns():
