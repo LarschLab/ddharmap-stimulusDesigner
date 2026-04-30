@@ -32,13 +32,11 @@ Download or clone this repository, then open a terminal in the repository folder
 cd path/to/ddharmap-stimulusDesigner
 ```
 
-The Conda environment is still named `social_filters`; that name does not need to match the repository folder.
-
 ### 3. Create The Environment
 
 ```bash
 conda env create -f environment.yml
-conda activate social_filters
+conda activate stimDesign
 pip install -e .
 ```
 
@@ -46,7 +44,7 @@ If the environment already exists and you want to update it:
 
 ```bash
 conda env update -f environment.yml --prune
-conda activate social_filters
+conda activate stimDesign
 pip install -e .
 ```
 
@@ -55,7 +53,7 @@ PsychoPy is optional. You only need it if you want to present stimuli full-scree
 ## Start The Program
 
 ```bash
-conda activate social_filters
+conda activate stimDesign
 python scripts/stimuli/stimulus_designer_app.py
 ```
 
@@ -185,7 +183,7 @@ Some visual primitives add extra columns, such as:
 Screenshots are stored under `docs/images/`. To regenerate them, use a computer where the Conda environment has PyQt6 installed:
 
 ```bash
-conda activate social_filters
+conda activate stimDesign
 python scripts/docs/capture_gui_screenshots.py
 ```
 
@@ -198,7 +196,7 @@ The script opens the GUI with a small sample project and saves the README screen
 Activate the Conda environment:
 
 ```bash
-conda activate social_filters
+conda activate stimDesign
 ```
 
 If PyQt6 is still missing, update the environment:
