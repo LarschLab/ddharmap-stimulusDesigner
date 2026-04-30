@@ -16,6 +16,46 @@ Append meaningful handoffs using this template.
 
 ## 2026-04-29
 
+- Date: 2026-04-30
+- Short label: Stimulus designer reopen last project
+- Slice goal: Automatically restore the last opened or saved stimulus designer project on GUI startup.
+- Passes completed: Added QSettings-backed last-project persistence, startup restore fallback handling, open/save path recording, and isolated settings tests.
+- What changed: `StimulusDesignerWindow` now remembers successful project open/save paths and silently reopens the remembered project if it still loads.
+- What remains broken: Nothing known.
+- Remaining in-slice work: None.
+- Next likely breakpoint: Users may eventually want a “clear recent project” action if stale paths become confusing.
+- Rerun implications: Run `python -m pytest tests/test_stimulus_designer.py tests/test_stimulus_designer_app.py -q`.
+
+- Date: 2026-04-30
+- Short label: Stimulus list no-op drag visibility fix
+- Slice goal: Prevent no-op stimulus drag/releases from hiding rows in the left stimulus list.
+- Passes completed: Replaced native Qt list drag/drop mutation with custom mouse-based reorder handling, preserved blue insertion feedback, and added focused no-op/reorder tests.
+- What changed: `StimulusListWidget` no longer accepts Qt item-view move drops; it emits reorder signals only after custom drag threshold/release handling.
+- What remains broken: Manual GUI confirmation is still useful for drag feel on the target workstation.
+- Remaining in-slice work: None.
+- Next likely breakpoint: If users drag outside the list and release, a future pass may add explicit cancel/drop-outside behavior.
+- Rerun implications: Run `python -m pytest tests/test_stimulus_designer.py tests/test_stimulus_designer_app.py -q`.
+
+- Date: 2026-04-30
+- Short label: Stimulus designer drag-reorder stimulus list
+- Slice goal: Let users reorder stimuli from the left stimulus list with drag/drop feedback.
+- Passes completed: Added a draggable stimulus list widget, blue insertion-line feedback, project-list reorder handling, selection preservation, and focused GUI tests.
+- What changed: `scripts/stimuli/stimulus_designer_app.py` now supports drag-reordering the left stimulus list; `project.stimuli` order follows the visible order.
+- What remains broken: Manual GUI confirmation is still useful for drag feel and insertion-line visibility on macOS.
+- Remaining in-slice work: None.
+- Next likely breakpoint: Native drag/drop event details can vary by Qt platform backend, so manual testing should confirm drop targeting.
+- Rerun implications: Run `python -m pytest tests/test_stimulus_designer.py tests/test_stimulus_designer_app.py -q`.
+
+- Date: 2026-04-29
+- Short label: Stimulus designer Bezier arc primitive
+- Slice goal: Add a three-point user-defined arc primitive with bout/continuous movement and 0.5 cm step defaults.
+- Passes completed: Added backend Bezier arc row generation, GUI add-menu/point-selection/parameter support, updated linear default step size, and added focused tests.
+- What changed: `src/stimulus_designer.py` now supports `bezier_arc` primitives with start/end/control points. `scripts/stimuli/stimulus_designer_app.py` exposes the primitive and uses 0.5 cm as the default step distance for stepped path primitives.
+- What remains broken: Manual GUI confirmation is still useful to confirm the control-point selection order feels natural.
+- Remaining in-slice work: None.
+- Next likely breakpoint: Users may expect the third point to lie exactly on the rendered curve; current behavior treats it as a quadratic Bezier control point.
+- Rerun implications: Run `python -m pytest tests/test_stimulus_designer.py tests/test_stimulus_designer_app.py -q`.
+
 - Date: 2026-04-29
 - Short label: Stimulus designer 2 cm first ring default
 - Slice goal: Start new GUI projects with the first placement ring 2 cm from the fish.
@@ -28,10 +68,10 @@ Append meaningful handoffs using this template.
 
 - Date: 2026-04-29
 - Short label: Stimulus designer avoidance fill and petri dish guide
-- Slice goal: Emphasize the near-fish avoidance area and show the 10 cm dish boundary in the calibrated preview.
-- Passes completed: Filled the 18 mm avoidance circle with translucent red, added a fish-centered 10 cm diameter petri dish guide, and updated GUI tests.
+- Slice goal: Emphasize the near-fish avoidance area and show the 8.7 cm dish boundary in the calibrated preview.
+- Passes completed: Filled the 18 mm avoidance circle with translucent red, added a fish-centered 8.7 cm diameter petri dish guide, and updated GUI tests.
 - What changed: `scripts/stimuli/stimulus_designer_app.py` now draws preview-only avoidance and petri dish guides without changing trajectory exports or projection playback.
-- What remains broken: Manual visual confirmation is still useful because the 10 cm dish slightly exceeds the current 9.5 cm calibrated screen height.
+- What remains broken: Manual visual confirmation is still useful for guide visibility in the calibrated preview.
 - Remaining in-slice work: Confirm the red fill opacity is strong enough without obscuring grid/stimulus details.
 - Next likely breakpoint: If the exact dish center differs from fish origin in a real setup, the guide may need an offset setting.
 - Rerun implications: Run `python -m pytest tests/test_stimulus_designer.py tests/test_stimulus_designer_app.py -q`.

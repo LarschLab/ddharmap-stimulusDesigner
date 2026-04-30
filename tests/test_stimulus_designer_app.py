@@ -9,7 +9,20 @@ QtWidgets = pytest.importorskip("PyQt6.QtWidgets", reason="PyQt6 is not installe
 QtGui = pytest.importorskip("PyQt6.QtGui", reason="PyQt6 is not installed")
 QtCore = pytest.importorskip("PyQt6.QtCore", reason="PyQt6 is not installed")
 
-from scripts.stimuli.stimulus_designer_app import PreviewCanvas, StimulusDesignerWindow  # noqa: E402
+from scripts.stimuli.stimulus_designer_app import PreviewCanvas, StimulusDesignerWindow, StimulusListWidget  # noqa: E402
+from src.stimulus_designer import StimulusProject, StimulusSpec, save_project  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def isolated_qsettings(tmp_path):
+    previous_format = QtCore.QSettings.defaultFormat()
+    QtCore.QSettings.setDefaultFormat(QtCore.QSettings.Format.IniFormat)
+    QtCore.QSettings.setPath(QtCore.QSettings.Format.IniFormat, QtCore.QSettings.Scope.UserScope, str(tmp_path))
+    settings = QtCore.QSettings("social_filters", "stimulus_designer")
+    settings.clear()
+    yield
+    settings.clear()
+    QtCore.QSettings.setDefaultFormat(previous_format)
 
 
 @pytest.fixture
@@ -88,11 +101,110 @@ def test_stimulus_designer_gui_starts_with_projector_calibration(qt_app):
         window.close()
 
 
+def test_stimulus_designer_reopens_last_project(qt_app, tmp_path):
+    project_path = tmp_path / "remembered_project.json"
+    save_project(
+        StimulusProject(stimuli=[StimulusSpec(key="Remembered", name="Remembered", primitives=[])]),
+        project_path,
+    )
+    QtCore.QSettings("social_filters", "stimulus_designer").setValue(
+        StimulusDesignerWindow.LAST_PROJECT_PATH_KEY,
+        str(project_path),
+    )
+
+    window = StimulusDesignerWindow()
+    try:
+        assert window.current_project_path == project_path.resolve()
+        assert [stim.key for stim in window.project.stimuli] == ["Remembered"]
+        assert window.stimulus_list.item(0).text() == "Remembered"
+    finally:
+        window.close()
+
+
+def test_stimulus_designer_missing_last_project_falls_back_and_clears_setting(qt_app, tmp_path):
+    missing_path = tmp_path / "missing_project.json"
+    settings = QtCore.QSettings("social_filters", "stimulus_designer")
+    settings.setValue(StimulusDesignerWindow.LAST_PROJECT_PATH_KEY, str(missing_path))
+
+    window = StimulusDesignerWindow()
+    try:
+        assert [stim.key for stim in window.project.stimuli] == ["LeB"]
+        assert window.current_project_path is None
+        assert settings.value(StimulusDesignerWindow.LAST_PROJECT_PATH_KEY, "", type=str) == ""
+    finally:
+        window.close()
+
+
+def test_stimulus_designer_invalid_last_project_falls_back_and_clears_setting(qt_app, tmp_path):
+    invalid_path = tmp_path / "invalid_project.json"
+    invalid_path.write_text("{not valid json")
+    settings = QtCore.QSettings("social_filters", "stimulus_designer")
+    settings.setValue(StimulusDesignerWindow.LAST_PROJECT_PATH_KEY, str(invalid_path))
+
+    window = StimulusDesignerWindow()
+    try:
+        assert [stim.key for stim in window.project.stimuli] == ["LeB"]
+        assert window.current_project_path is None
+        assert settings.value(StimulusDesignerWindow.LAST_PROJECT_PATH_KEY, "", type=str) == ""
+    finally:
+        window.close()
+
+
+def test_stimulus_designer_open_project_remembers_path(qt_app, tmp_path, monkeypatch):
+    project_path = tmp_path / "opened_project.json"
+    save_project(
+        StimulusProject(stimuli=[StimulusSpec(key="Opened", name="Opened", primitives=[])]),
+        project_path,
+    )
+    monkeypatch.setattr(
+        QtWidgets.QFileDialog,
+        "getOpenFileName",
+        lambda *args, **kwargs: (str(project_path), "JSON (*.json)"),
+    )
+    window = StimulusDesignerWindow()
+    try:
+        window._open_project()
+
+        assert [stim.key for stim in window.project.stimuli] == ["Opened"]
+        assert window.current_project_path == project_path.resolve()
+        assert QtCore.QSettings("social_filters", "stimulus_designer").value(
+            StimulusDesignerWindow.LAST_PROJECT_PATH_KEY,
+            "",
+            type=str,
+        ) == str(project_path.resolve())
+    finally:
+        window.close()
+
+
+def test_stimulus_designer_save_project_remembers_path(qt_app, tmp_path, monkeypatch):
+    project_path = tmp_path / "saved_project.json"
+    monkeypatch.setattr(
+        QtWidgets.QFileDialog,
+        "getSaveFileName",
+        lambda *args, **kwargs: (str(project_path), "JSON (*.json)"),
+    )
+    window = StimulusDesignerWindow()
+    try:
+        window.project.stimuli[0].key = "Saved"
+
+        window._save_project()
+
+        assert project_path.exists()
+        assert window.current_project_path == project_path.resolve()
+        assert QtCore.QSettings("social_filters", "stimulus_designer").value(
+            StimulusDesignerWindow.LAST_PROJECT_PATH_KEY,
+            "",
+            type=str,
+        ) == str(project_path.resolve())
+    finally:
+        window.close()
+
+
 def test_stimulus_designer_add_menu_hides_redundant_primitives(qt_app):
     window = StimulusDesignerWindow()
     try:
         kinds = [window.kind_combo.itemText(i) for i in range(window.kind_combo.count())]
-        assert kinds == ["static_hold", "flicker", "rocking", "rocking_lr", "point_path", "linear", "whole_field_grating", "loom"]
+        assert kinds == ["static_hold", "flicker", "rocking", "rocking_lr", "point_path", "linear", "bezier_arc", "whole_field_grating", "loom"]
         assert "arc" not in kinds
         assert "continuous_arc" not in kinds
         assert "waypoint_move" not in kinds
@@ -108,6 +220,205 @@ def test_stimulus_designer_add_stimulus_starts_blank(qt_app):
         assert stim.primitives == []
     finally:
         window.close()
+
+
+def test_stimulus_list_drop_index_uses_item_halves(qt_app):
+    widget = StimulusListWidget()
+    try:
+        widget.addItems(["A", "B", "C"])
+        widget.resize(160, 120)
+        widget.show()
+        qt_app.processEvents()
+
+        second_rect = widget.visualItemRect(widget.item(1))
+
+        assert widget._drop_index_for_pos(QtCore.QPoint(second_rect.center().x(), second_rect.top() + 1)) == 1
+        assert widget._drop_index_for_pos(QtCore.QPoint(second_rect.center().x(), second_rect.bottom() - 1)) == 2
+        assert widget._drop_index_for_pos(QtCore.QPoint(second_rect.center().x(), widget.viewport().height() + 20)) == 3
+    finally:
+        widget.close()
+
+
+def _mouse_event(event_type, pos, button, buttons):
+    return QtGui.QMouseEvent(
+        event_type,
+        QtCore.QPointF(pos),
+        button,
+        buttons,
+        QtCore.Qt.KeyboardModifier.NoModifier,
+    )
+
+
+def _drag_list_item(widget, source_row: int, target_pos: QtCore.QPoint):
+    source_pos = widget.visualItemRect(widget.item(source_row)).center()
+    widget.mousePressEvent(
+        _mouse_event(
+            QtCore.QEvent.Type.MouseButtonPress,
+            source_pos,
+            QtCore.Qt.MouseButton.LeftButton,
+            QtCore.Qt.MouseButton.LeftButton,
+        )
+    )
+    widget.mouseMoveEvent(
+        _mouse_event(
+            QtCore.QEvent.Type.MouseMove,
+            target_pos,
+            QtCore.Qt.MouseButton.NoButton,
+            QtCore.Qt.MouseButton.LeftButton,
+        )
+    )
+    widget.mouseReleaseEvent(
+        _mouse_event(
+            QtCore.QEvent.Type.MouseButtonRelease,
+            target_pos,
+            QtCore.Qt.MouseButton.LeftButton,
+            QtCore.Qt.MouseButton.NoButton,
+        )
+    )
+
+
+def test_stimulus_list_noop_drag_keeps_items_visible(qt_app):
+    widget = StimulusListWidget()
+    try:
+        widget.addItems(["A", "B", "C"])
+        widget.resize(160, 120)
+        widget.show()
+        qt_app.processEvents()
+        emitted = []
+        widget.stimulusMoved.connect(lambda from_row, to_row: emitted.append((from_row, to_row)))
+        target = widget.visualItemRect(widget.item(1)).center()
+
+        for _ in range(3):
+            _drag_list_item(widget, 1, target)
+
+        assert emitted == []
+        assert widget.count() == 3
+        assert [widget.item(index).isHidden() for index in range(widget.count())] == [False, False, False]
+        assert widget.drop_indicator_row is None
+    finally:
+        widget.close()
+
+
+def test_stimulus_list_drag_down_emits_normalized_move(qt_app):
+    widget = StimulusListWidget()
+    try:
+        widget.addItems(["A", "B", "C"])
+        widget.resize(160, 120)
+        widget.show()
+        qt_app.processEvents()
+        emitted = []
+        widget.stimulusMoved.connect(lambda from_row, to_row: emitted.append((from_row, to_row)))
+        target = QtCore.QPoint(widget.visualItemRect(widget.item(2)).center().x(), widget.viewport().height() + 20)
+
+        _drag_list_item(widget, 0, target)
+
+        assert emitted == [(0, 2)]
+        assert widget.drop_indicator_row is None
+    finally:
+        widget.close()
+
+
+def test_stimulus_list_drag_up_emits_move(qt_app):
+    widget = StimulusListWidget()
+    try:
+        widget.addItems(["A", "B", "C"])
+        widget.resize(160, 120)
+        widget.show()
+        qt_app.processEvents()
+        emitted = []
+        widget.stimulusMoved.connect(lambda from_row, to_row: emitted.append((from_row, to_row)))
+        target = widget.visualItemRect(widget.item(0)).topLeft() + QtCore.QPoint(8, 1)
+
+        _drag_list_item(widget, 2, target)
+
+        assert emitted == [(2, 0)]
+        assert widget.drop_indicator_row is None
+    finally:
+        widget.close()
+
+
+def test_stimulus_list_click_without_drag_selects_item(qt_app):
+    widget = StimulusListWidget()
+    try:
+        widget.addItems(["A", "B"])
+        widget.resize(160, 80)
+        widget.show()
+        qt_app.processEvents()
+        target = widget.visualItemRect(widget.item(1)).center()
+
+        widget.mousePressEvent(
+            _mouse_event(
+                QtCore.QEvent.Type.MouseButtonPress,
+                target,
+                QtCore.Qt.MouseButton.LeftButton,
+                QtCore.Qt.MouseButton.LeftButton,
+            )
+        )
+        widget.mouseReleaseEvent(
+            _mouse_event(
+                QtCore.QEvent.Type.MouseButtonRelease,
+                target,
+                QtCore.Qt.MouseButton.LeftButton,
+                QtCore.Qt.MouseButton.NoButton,
+            )
+        )
+
+        assert widget.currentRow() == 1
+    finally:
+        widget.close()
+
+
+def test_stimulus_designer_move_stimulus_down_preserves_selection(qt_app):
+    window = StimulusDesignerWindow()
+    try:
+        window.project.stimuli = [
+            window.project.stimuli[0],
+            window.project.stimuli[0].__class__(key="B", name="B", primitives=[]),
+            window.project.stimuli[0].__class__(key="C", name="C", primitives=[]),
+        ]
+        window.project.stimuli[0].key = "A"
+        window._refresh_all()
+
+        window._move_stimulus(0, 2)
+
+        assert [stim.key for stim in window.project.stimuli] == ["B", "C", "A"]
+        assert window.stimulus_list.currentRow() == 2
+        assert window._current_stimulus().key == "A"
+    finally:
+        window.close()
+
+
+def test_stimulus_designer_move_stimulus_up_preserves_selection(qt_app):
+    window = StimulusDesignerWindow()
+    try:
+        window.project.stimuli = [
+            window.project.stimuli[0].__class__(key="A", name="A", primitives=[]),
+            window.project.stimuli[0].__class__(key="B", name="B", primitives=[]),
+            window.project.stimuli[0].__class__(key="C", name="C", primitives=[]),
+        ]
+        window._refresh_all()
+
+        window._move_stimulus(2, 0)
+
+        assert [stim.key for stim in window.project.stimuli] == ["C", "A", "B"]
+        assert window.stimulus_list.currentRow() == 0
+        assert window._current_stimulus().key == "C"
+    finally:
+        window.close()
+
+
+def test_stimulus_list_drag_leave_clears_drop_indicator(qt_app):
+    widget = StimulusListWidget()
+    try:
+        widget.addItems(["A", "B"])
+        widget.drop_indicator_row = 1
+        event = QtGui.QDragLeaveEvent()
+
+        widget.dragLeaveEvent(event)
+
+        assert widget.drop_indicator_row is None
+    finally:
+        widget.close()
 
 
 def test_stimulus_designer_grid_click_without_selected_primitive_does_not_create_path(qt_app):
@@ -204,7 +515,28 @@ def test_stimulus_designer_grid_click_sets_linear_start_and_end(qt_app):
         assert [(p["ring_index"], p["point_index"]) for p in points] == [(0, 1), (0, 2)]
         assert primitive.params["movement_interval_ms"] == pytest.approx(700.0)
         assert primitive.params["mode"] == "bout"
-        assert primitive.params["step_distance_cm"] == pytest.approx(0.2)
+        assert primitive.params["step_distance_cm"] == pytest.approx(0.5)
+    finally:
+        window.close()
+
+
+def test_stimulus_designer_grid_click_sets_bezier_arc_start_end_and_control(qt_app):
+    window = StimulusDesignerWindow()
+    try:
+        window.kind_combo.setCurrentText("bezier_arc")
+        window._add_primitive()
+
+        window._toggle_grid_point(0, 1)
+        window._toggle_grid_point(0, 2)
+        window._toggle_grid_point(0, 3)
+
+        primitive = window.project.stimuli[0].primitives[0]
+        points = primitive.params["points"]
+        assert primitive.kind == "bezier_arc"
+        assert [(p["ring_index"], p["point_index"]) for p in points] == [(0, 1), (0, 2), (0, 3)]
+        assert primitive.params["movement_interval_ms"] == pytest.approx(700.0)
+        assert primitive.params["mode"] == "bout"
+        assert primitive.params["step_distance_cm"] == pytest.approx(0.5)
     finally:
         window.close()
 
@@ -352,6 +684,13 @@ def test_stimulus_designer_parameter_fields_follow_selected_primitive(qt_app):
         assert not window.primitive_mode_combo.isHidden()
 
         window.kind_combo.setCurrentText("linear")
+        window._add_primitive()
+        assert window.duration_spin.isHidden()
+        assert not window.primitive_interval_spin.isHidden()
+        assert not window.primitive_mode_combo.isHidden()
+        assert not window.step_distance_spin.isHidden()
+
+        window.kind_combo.setCurrentText("bezier_arc")
         window._add_primitive()
         assert window.duration_spin.isHidden()
         assert not window.primitive_interval_spin.isHidden()
@@ -547,7 +886,7 @@ def test_preview_canvas_avoidance_circle_uses_18_mm_radius(qt_app):
     assert 0 < calls[0][4].alpha() < 255
 
 
-def test_preview_canvas_petri_dish_uses_10_cm_diameter(qt_app):
+def test_preview_canvas_petri_dish_uses_8_7_cm_diameter(qt_app):
     canvas = PreviewCanvas()
     calls = []
 
@@ -567,8 +906,8 @@ def test_preview_canvas_petri_dish_uses_10_cm_diameter(qt_app):
     center = QtCore.QPointF(10.0, 20.0)
     canvas._draw_petri_dish(FakePainter(), center, scale=30.0)
 
-    assert canvas.PETRI_DISH_RADIUS_CM == pytest.approx(5.0)
-    assert calls == [(center, pytest.approx(150.0), pytest.approx(150.0), QtCore.Qt.BrushStyle.NoBrush)]
+    assert canvas.PETRI_DISH_RADIUS_CM == pytest.approx(4.35)
+    assert calls == [(center, pytest.approx(130.5), pytest.approx(130.5), QtCore.Qt.BrushStyle.NoBrush)]
 
 
 def test_preview_canvas_zoom_clamps_to_full_screen(qt_app):
