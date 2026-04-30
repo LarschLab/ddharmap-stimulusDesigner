@@ -1,4 +1,4 @@
-name: social_filters
+name: stimDesign
 channels:
   - conda-forge
   - defaults

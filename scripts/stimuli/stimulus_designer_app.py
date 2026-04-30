@@ -14,7 +14,7 @@ try:
 except ImportError as exc:
     raise SystemExit(
         "PyQt6 is required for the stimulus designer GUI. "
-        "Activate the social_filters Conda environment or install PyQt6."
+        "Activate the stimDesign Conda environment or install PyQt6."
     ) from exc
 
 from src.stimulus_designer import (

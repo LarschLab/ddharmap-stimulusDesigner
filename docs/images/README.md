@@ -3,7 +3,7 @@
 Run the screenshot capture helper from a PyQt-enabled environment to generate the PNG files referenced by the root README:
 
 ```bash
-conda activate social_filters
+conda activate stimDesign
 python scripts/docs/capture_gui_screenshots.py
 ```
 

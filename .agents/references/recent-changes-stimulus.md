@@ -17,10 +17,20 @@ Append meaningful handoffs using this template.
 ## 2026-04-29
 
 - Date: 2026-04-30
+- Short label: Conda environment rename
+- Slice goal: Rename the documented Conda environment from `social_filters` to `stimDesign`.
+- Passes completed: Updated `environment.yml`, README activation commands, screenshot docs, and the GUI PyQt install message.
+- What changed: New `conda env create -f environment.yml` runs create `stimDesign`; docs now activate `stimDesign`.
+- What remains broken: Existing local `social_filters` environments are not automatically renamed by Conda.
+- Remaining in-slice work: Users with an old local environment can recreate it from `environment.yml` or keep using it manually.
+- Next likely breakpoint: If the PyQt settings namespace is renamed later, migrate `StimulusDesignerWindow.SETTINGS_ORG` and tests together to preserve or intentionally reset remembered project paths.
+- Rerun implications: Run `python -m py_compile scripts/stimuli/stimulus_designer_app.py` after editing the user-facing import error.
+
+- Date: 2026-04-30
 - Short label: README repo-folder rename note
 - Slice goal: Keep install docs accurate after the repository root folder was renamed.
 - Passes completed: Scanned for old root-name/path references and updated the README clone-directory command.
-- What changed: `README.md` now uses `ddharmap-stimulusDesigner` as the example repository folder and notes that the `social_filters` Conda environment name is separate.
+- What changed: `README.md` now uses `ddharmap-stimulusDesigner` as the example repository folder.
 - What remains broken: Nothing known.
 - Remaining in-slice work: None.
 - Next likely breakpoint: If the Conda environment or PyQt settings namespace is intentionally renamed later, update docs, tests, and `StimulusDesignerWindow.SETTINGS_ORG` together.
