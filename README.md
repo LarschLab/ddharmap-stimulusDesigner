@@ -29,8 +29,10 @@ Install Miniconda or Anaconda if you do not already have it:
 Download or clone this repository, then open a terminal in the repository folder.
 
 ```bash
-cd path/to/social_filters
+cd path/to/ddharmap-stimulusDesigner
 ```
+
+The Conda environment is still named `social_filters`; that name does not need to match the repository folder.
 
 ### 3. Create The Environment
 

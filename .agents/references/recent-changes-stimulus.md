@@ -17,6 +17,16 @@ Append meaningful handoffs using this template.
 ## 2026-04-29
 
 - Date: 2026-04-30
+- Short label: README repo-folder rename note
+- Slice goal: Keep install docs accurate after the repository root folder was renamed.
+- Passes completed: Scanned for old root-name/path references and updated the README clone-directory command.
+- What changed: `README.md` now uses `ddharmap-stimulusDesigner` as the example repository folder and notes that the `social_filters` Conda environment name is separate.
+- What remains broken: Nothing known.
+- Remaining in-slice work: None.
+- Next likely breakpoint: If the Conda environment or PyQt settings namespace is intentionally renamed later, update docs, tests, and `StimulusDesignerWindow.SETTINGS_ORG` together.
+- Rerun implications: No runtime validation required for this docs-only change; rerun README commands manually after environment changes.
+
+- Date: 2026-04-30
 - Short label: Stimulus-only docs and README screenshots
 - Slice goal: Convert repo docs and agent workflow to stimulus design only and document beginner GUI usage with screenshot hooks.
 - Passes completed: Rewrote README and agent routing, added a screenshot capture helper, generated README GUI screenshots, slimmed the Conda environment, and removed stale neural-analysis modules/docs.
