@@ -17,6 +17,16 @@ Append meaningful handoffs using this template.
 ## 2026-04-29
 
 - Date: 2026-04-30
+- Short label: Stimulus-only docs and README screenshots
+- Slice goal: Convert repo docs and agent workflow to stimulus design only and document beginner GUI usage with screenshot hooks.
+- Passes completed: Rewrote README and agent routing, added a screenshot capture helper, generated README GUI screenshots, slimmed the Conda environment, and removed stale neural-analysis modules/docs.
+- What changed: The repo-facing docs now center on `src/stimulus_designer.py`, `stimulus_designer_app.py`, trajectory exports, and PsychoPy playback.
+- What remains broken: Nothing known; manual review of screenshot framing is still useful on the target workstation.
+- Remaining in-slice work: Optional: regenerate screenshots in the documented Conda environment if the GUI layout changes.
+- Next likely breakpoint: The screenshot crop regions may need visual adjustment after future GUI layout changes.
+- Rerun implications: Run `python -m pytest tests/test_stimulus_designer.py tests/test_stimulus_designer_app.py -q` and `python -m py_compile src/stimulus_designer.py scripts/stimuli/stimulus_designer_app.py scripts/stimuli/try_projection.py`.
+
+- Date: 2026-04-30
 - Short label: Stimulus designer reopen last project
 - Slice goal: Automatically restore the last opened or saved stimulus designer project on GUI startup.
 - Passes completed: Added QSettings-backed last-project persistence, startup restore fallback handling, open/save path recording, and isolated settings tests.

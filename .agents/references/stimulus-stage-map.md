@@ -1,23 +1,22 @@
 # Stimulus Stage Map
 
-Purpose: preserve stimulus-generation and projection semantics.
+Purpose: preserve stimulus-design, export, and projection semantics.
 
-Use this file when changing trajectory generators, stimulus configs, projection playback, or generated CSV contracts.
+## End-To-End Stages
 
-## End-to-end stages
+1. Editable project: the GUI stores stimuli, primitives, global timing, calibration, and grid settings.
+2. Trajectory generation: `src/stimulus_designer.py` turns each stimulus into a dataframe.
+3. Export: `export_project` writes `*_trajectory.csv` files plus `parameters/` metadata.
+4. Projection playback: `try_projection.py` loads exported CSVs, opens PsychoPy fullscreen playback, draws frame by frame, and writes `stimulus_timing_log.csv`.
+5. Documentation: README screenshots are generated from the GUI with `scripts/docs/capture_gui_screenshots.py`.
 
-1. JSON config: package/trajectory JSON files under `scripts/stimuli/` define stimulus names and parameters.
-2. Trajectory generation: generator scripts create per-stimulus `*_trajectory.csv` files with position/radius columns and parameter metadata.
-3. Metadata/duration output: scripts write `parameters/experiment_parameters.csv` and duration summaries when supported.
-4. Projection playback: `try_projection.py` loads `*_trajectory.csv`, opens PsychoPy fullscreen playback, draws dots frame by frame, and writes `stimulus_timing_log.csv`.
-5. Calcium consumption: `src/stimuli_timeline.py` later reads generated trajectory CSVs to infer timing for alignment.
+## Concept Ownership
 
-## Concept ownership
+- Project model, grid geometry, primitive semantics, mirror behavior, duration summaries, and export dataframe generation: `src/stimulus_designer.py`.
+- GUI layout, project editing, point selection, preview guides, drag/drop, screenshot-facing UI: `scripts/stimuli/stimulus_designer_app.py`.
+- Display hardware, screen/monitor settings, frame playback, escape handling, and timing log: `scripts/stimuli/try_projection.py`.
+- Legacy JSON-based trajectory generators remain under `scripts/stimuli/` and should be preserved unless an explicit migration is requested.
 
-- Geometry, angle ranges, speed, static period, flicker/rocking semantics: generator scripts and JSON configs.
-- Display hardware, screen, monitor, frame playback, escape handling, timing log: `try_projection.py`.
-- Downstream movement timing interpretation: `src/stimuli_timeline.py`.
+## Navigation Notes
 
-## Navigation notes
-
-Do not patch calcium notebooks to compensate for malformed trajectory CSVs. Fix trajectory generation when columns or frame counts are wrong.
+Do not patch exported CSVs by hand to compensate for malformed generation. Fix trajectory generation in the owner code.

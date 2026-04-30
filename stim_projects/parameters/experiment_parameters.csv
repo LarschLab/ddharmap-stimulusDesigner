@@ -1,0 +1,15 @@
+stimulus_key,name,n_dots,total_frames,total_sec,radius_cm,speed_cm_sec,framerate,update_interval_ms,static_period_sec,dot_size_cm,rotation_angle_deg,flicker_interval_sec,pause_before_sec,pause_after_sec,repetitions
+RAB,Right approach bout,1,1188,19.8,1.8,0.497,60.0,600.0,10.0,0.2,45.0,0.3,12.5,12.5,1
+Rl_RB,Right lateral repulse bout,1,1146,19.1,1.8,0.497,60.0,600.0,10.0,0.2,45.0,0.3,12.5,12.5,1
+LAB,Left approach bout,1,1188,19.8,1.8,0.497,60.0,600.0,10.0,0.2,45.0,0.3,12.5,12.5,1
+Ll_RB,Left lateral repulse bout,1,1146,19.1,1.8,0.497,60.0,600.0,10.0,0.2,45.0,0.3,12.5,12.5,1
+RAC,Right approach continuous,1,1188,19.8,1.8,0.497,60.0,600.0,10.0,0.2,45.0,0.3,12.5,12.5,1
+LAC,Left approach continuous,1,1188,19.8,1.8,0.497,60.0,600.0,10.0,0.2,45.0,0.3,12.5,12.5,1
+LRB,Left repulse bout,1,1146,19.1,1.8,0.497,60.0,600.0,10.0,0.2,45.0,0.3,12.5,12.5,1
+LRC,Left repulse continuous,1,1146,19.1,1.8,0.497,60.0,600.0,10.0,0.2,45.0,0.3,12.5,12.5,1
+RRB,Right repulse bout,1,1146,19.1,1.8,0.497,60.0,600.0,10.0,0.2,45.0,0.3,12.5,12.5,1
+RRC,Right repulse continuous,1,1146,19.1,1.8,0.497,60.0,600.0,10.0,0.2,45.0,0.3,12.5,12.5,1
+LB,Left bout,1,1020,17.0,1.8,0.497,60.0,600.0,10.0,0.2,45.0,0.3,12.5,12.5,1
+LC,Left continuous,1,1020,17.0,1.8,0.497,60.0,600.0,10.0,0.2,45.0,0.3,12.5,12.5,1
+RB,Right bout,1,1020,17.0,1.8,0.497,60.0,600.0,10.0,0.2,45.0,0.3,12.5,12.5,1
+RC,Right continuous,1,1020,17.0,1.8,0.497,60.0,600.0,10.0,0.2,45.0,0.3,12.5,12.5,1

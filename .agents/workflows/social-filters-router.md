@@ -1,33 +1,30 @@
-# Social Filters Router
+# Stimulus Designer Router
 
-Purpose: dispatch tasks to the smallest workflow and reference docs needed for this repository.
+Purpose: dispatch tasks in this stimulus-designer-only repository.
 
-Use this file when starting any task after reading `AGENTS.md` and `coding.md`.
+Use this file after reading `AGENTS.md` and `coding.md`.
 
-## Read this first
+## Read This First
 
-1. Classify the primary target: calcium analysis, stimulus workflow, docs/workflow maintenance, or repo tooling.
-2. Open the matching workflow router.
-3. Open the smallest semantic reference named by that router.
-4. Open owning modules before notebooks or long scripts.
+1. Classify the target: GUI, trajectory generation/export, PsychoPy playback, docs/workflow, or repo tooling.
+2. Open the matching smallest reference.
+3. Open owner modules before long scripts.
+4. Preserve trajectory and timing contracts unless the task explicitly asks for a migration.
 
-## Workflow profile dispatch
+## Workflow Dispatch
 
-| Target or query content | Open first |
-| --- | --- |
-| `scripts/calcium_analysis/*.ipynb`, dFoF, Suite2p, stimulus alignment, trial-aligned traces, significant traces, rasters, response classification, z-score baselines | `.agents/workflows/calcium-analysis-router.md` |
-| `src/data_loading.py`, `src/dff_extraction.py`, `src/stimuli_timeline.py`, `src/analysis_tools.py`, `src/plotting.py`, `src/significant_traces.py` | `.agents/workflows/calcium-analysis-router.md` |
-| `scripts/stimuli/*.py`, stimulus JSON configs, trajectory CSVs, PsychoPy projection, timing logs | `.agents/workflows/stimulus-workflow-router.md` |
-| Agent workflow docs, handoff logs, `coding.md`, routing rules | `.agents/user-guide.md`, then relevant `.agents/references/*` |
+| Target or query content | Open first | Owner layer |
+| --- | --- | --- |
+| GUI layout, point grid, preview drawing, primitive editor, drag/drop, project open/save | `.agents/workflows/stimulus-workflow-router.md`, then `.agents/references/recent-changes-stimulus.md` | `scripts/stimuli/stimulus_designer_app.py` |
+| Project model, primitive geometry, dataframe generation, mirror/export semantics | `.agents/references/stimulus-stage-map.md`, then `.agents/references/symbol-index.md` | `src/stimulus_designer.py` |
+| Trajectory CSV columns, metadata files, exported project artifacts | `.agents/references/data-contracts.md` | `src/stimulus_designer.py` |
+| PsychoPy fullscreen playback, display settings, timing log | `.agents/references/data-contracts.md` | `scripts/stimuli/try_projection.py` |
+| Legacy stimulus generator scripts or JSON packages | `.agents/references/stimulus-stage-map.md` | `scripts/stimuli/*.py`, `scripts/stimuli/*.json` |
+| README, install docs, screenshot docs, agent workflow docs | `.agents/user-guide.md` | docs and `.agents/` |
 
-## Cross-workflow invariants
+## Cross-Workflow Invariants
 
-- Apply `coding.md` first, then repo-specific router and reference rules.
-- Prefer package/module edits over orchestration-layer edits.
-- Preserve canonical outputs, stage semantics, and legacy filenames unless migration is explicit.
-- Do not treat wrappers or notebooks as business-logic authority when reusable owners exist.
-- Fix semantics at the writer stage, not in downstream consumers.
-
-## Compact scaling rule
-
-Add an entry to an existing profile when the task uses the same owners and validation surface. Create a new profile only when it has separate entrypoints, stage order, semantic references, and handoff needs.
+- Prefer owner-module edits over patching generated CSVs.
+- Keep generated trajectory files as `*_trajectory.csv`.
+- Keep projection playback as a consumer of exported CSVs.
+- Log meaningful GUI/runtime/export behavior changes in `.agents/references/recent-changes-stimulus.md`.

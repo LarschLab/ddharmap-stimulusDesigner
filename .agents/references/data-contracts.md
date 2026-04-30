@@ -1,31 +1,28 @@
 # Data Contracts
 
-Purpose: record canonical shapes, files, and artifact ownership used across workflows.
+Purpose: record canonical stimulus-designer files, columns, and artifact ownership.
 
-## Calcium contracts
+## Trajectory CSVs
 
-- dFoF matrices are frames x neurons. Keep this orientation unless a function explicitly documents a transposed plotting shape.
-- `load_2p_experiment` returns a dict containing `dfof`, timing metadata, `stimuli_durations`, `adjusted_log`, `stimuli_trace_60`, `stimuli_table`, `stimuli_id_map`, `paths`, `dFoF_merged_map`, optional artifact arrays, and Suite2p plane metadata.
-- `stimuli_table` rows contain block, trial, stimulus name/id, onset/offset time, onset/offset frame, and total frames.
-- `stimuli_id_map` maps stimulus names to integer IDs starting at 1. Zero in traces means no stimulus.
-- `trial_aligned_traces[stim_id]` is treated by plotting as neurons x time x repetitions.
-- `raster` and `deltaF_center` are frames x neurons and must remain aligned.
-- Kept/filtered ROI index arrays preserve mapping back to Suite2p ROI indices.
+- Exported trajectory files use `*_trajectory.csv`.
+- Dot position columns are named `<dot>_x` and `<dot>_y`.
+- Dot radius/visibility columns are named `<dot>_radius`.
+- Radius `0.0` means the dot is hidden for that frame.
 
-## Canonical calcium files
+## GUI Visual Primitive Columns
 
-- Merged dFoF: `<fish_id>_dFoF_merged.npy` under `03_analysis/functional/suite2P/merged_dFoF/`.
-- Filtered ROI indices: `<prefix>_dFoF_merged_filtered_roi_indices.npy`.
-- Significant traces: `<prefix>_significant_traces.npz` with `raster` and `deltaF_center`.
-- Reliability filter indices: `<prefix>_kept_neuron_indices.npy`.
-- Z-score artifact: `<prefix>_zcore.npz` with `z_traces`.
+GUI-generated visual primitives can add non-dot columns while preserving dot columns:
 
-## Stimulus contracts
+- Whole-field gratings use `grating_active`, `grating_x`, `grating_y`, `grating_direction_deg`, `grating_bar_thickness_cm`, `grating_speed_cm_sec`, and `grating_phase_cm`.
+- Loom stimuli use `loom_active`, `loom_x`, `loom_y`, `loom_radius`, `loom_growth_speed_cm_sec`, and `loom_max_radius_cm`.
 
-- Trajectory files use `*_trajectory.csv`.
-- Dot position columns are named `<dot>_x` and `<dot>_y`; radius/visibility columns use `<dot>_radius` where applicable.
-- GUI-generated visual primitives can add non-dot columns while preserving dot columns:
-  - Whole-field gratings use `grating_active`, `grating_x`, `grating_y`, `grating_direction_deg`, `grating_bar_thickness_cm`, `grating_speed_cm_sec`, and `grating_phase_cm`.
-  - Loom stimuli use `loom_active`, `loom_x`, `loom_y`, `loom_radius`, `loom_growth_speed_cm_sec`, and `loom_max_radius_cm`.
-- Projection consumes generated trajectory CSVs and writes `stimulus_timing_log.csv` with stimulus file, start/end unix time, and duration seconds.
-- `parameters/experiment_parameters.csv` is generator-owned metadata and should stay compatible with existing notebooks/scripts.
+## Exported Metadata
+
+- `parameters/experiment_parameters.csv` is export-owned metadata summarizing stimuli and global parameters.
+- `parameters/total_time_sec.csv` stores the estimated total experiment duration.
+- `parameters/stimulus_designer_project.json` stores the editable project used for export.
+
+## Projection Timing
+
+- `scripts/stimuli/try_projection.py` consumes exported trajectory CSVs.
+- Projection writes `stimulus_timing_log.csv` with stimulus file, start/end unix time, and actual playback duration seconds.

@@ -959,7 +959,9 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
         self.grid_group.setMinimumHeight(self.grid_group.sizeHint().height())
         right.addWidget(self.grid_group)
 
-        file_buttons = QtWidgets.QGridLayout()
+        self.file_actions_widget = QtWidgets.QWidget()
+        self.file_actions_widget.setObjectName("file_actions_widget")
+        file_buttons = QtWidgets.QGridLayout(self.file_actions_widget)
         actions = [
             ("Open Project", self._open_project),
             ("Save Project", self._save_project),
@@ -979,7 +981,7 @@ class StimulusDesignerWindow(QtWidgets.QMainWindow):
             }
             self._register_description(btn, descriptions[label])
             file_buttons.addWidget(btn, i // 2, i % 2)
-        right.addLayout(file_buttons)
+        right.addWidget(self.file_actions_widget)
         layout.addWidget(self.right_scroll, 2)
 
     def _install_zoom_shortcuts(self) -> None:
